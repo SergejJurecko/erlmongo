@@ -27,5 +27,6 @@ I haven't used erlmongo in production yet, so all the bugs might not be ironed o
   % Second parameter the index we wish to create. 1 = ascending, -1 = descending.
   Mong:ensureIndex(#mydoc{}, [{#mydoc.i, 1}, {#mydoc.name, -1}])
 
-
+= Author
+ Sergej Jurečko
 
