@@ -66,30 +66,71 @@ findOne(Col, [_|_] = Query, [_|_] = Selector) ->
 	[Res] = find(Col, Query, Selector, 0, 1),
 	Res.
 
+find(Col, #search{} = Q) ->
+	find(Col, Q#search.criteria, Q#search.field_selector, Q#search.nskip, Q#search.ndocs).
+find(#search{} = Q) ->
+	find(Q#search.criteria, Q#search.field_selector, Q#search.nskip, Q#search.ndocs).
+	
+find(Col, Query, Selector, From, Limit) ->
+	Quer = #search{ndocs = Limit, nskip = From, criteria = mongodb:encode(Query), field_selector = mongodb:encode(Selector)},
+	case mongodb:exec_find(name(Col), Quer) of
+		not_connected ->
+			not_connected;
+		<<>> ->
+			[];
+		Res ->
+			mongodb:decode(Res)
+	end.
+find(Query, Selector, From, Limit) ->
+	Quer = #search{ndocs = Limit, nskip = From, criteria = mongodb:encoderec(Query), field_selector = mongodb:encoderec_selector(Query, Selector)},
+	case mongodb:exec_find(name(element(1,Query)), Quer) of
+		not_connected ->
+			not_connected;
+		<<>> ->
+			[];
+		Result ->
+			mongodb:decoderec(Query, Result)
+	end.
+
 % opts: [reverse, {sort, SortyBy}, explain, {hint, Hint}, snapshot]
 % SortBy: {key, Val} or a list of keyval tuples -> {i,1}  (1 = ascending, -1 = descending)
 % Hint: key
 findOpt(Col, Query, Selector, Opts, From, Limit) ->
-	find(Col, translateopts(undefined, Opts,[]) ++ [{<<"query">>, Query}], Selector, From, Limit).
+	find(Col, translateopts(undefined, Opts,[{<<"query">>, Query}]), Selector, From, Limit).
 % SortBy examples: {#mydoc.name, 1}, [{#mydoc.i, 1},{#mydoc.name,-1}]
 % Hint example: #mydoc.name
 findOpt(Query, Selector, Opts, From, Limit) ->
-	Quer = #quer{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
-	             quer = mongodb:encode(translateopts(Query, Opts,[]) ++ [{<<"query">>, {bson, mongodb:encoderec(Query)}}])}, 
+	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
+	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encoderec(Query)}}]))}, 
 	case mongodb:exec_find(name(element(1,Query)), Quer) of
-		false ->
-			false;
+		not_connected ->
+			not_connected;
+		<<>> ->
+			[];
 		Result ->
-			mongodb:decoderec(Query, Result)
+			% If opt is explain, it will crash
+			try mongodb:decoderec(Query, Result) of
+				Res ->
+					Res
+			catch
+				error:_ ->
+					mongodb:decode(Result)
+			end
 	end.
+findOpt(Col, #search{} = Q, Opts) ->
+	findOpt(Col, Q#search.criteria, Q#search.field_selector, Opts, Q#search.nskip, Q#search.ndocs).
+findOpt(#search{} = Q, Opts) ->
+	findOpt(Q#search.criteria, Q#search.field_selector, Opts, Q#search.nskip, Q#search.ndocs).
 	
 cursor(Query, Selector, Opts, From, Limit) ->
-	Quer = #quer{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
-	             quer = mongodb:encode(translateopts(Query, Opts,[]) ++ [{<<"query">>, {bson, mongodb:encoderec(Query)}}]),
+	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
+	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encoderec(Query)}}])),
 				 opts = ?QUER_OPT_CURSOR},
 	case mongodb:exec_cursor(name(element(1,Query)), Quer) of
-		false ->
-			false;
+		not_connected ->
+			not_connected;
+		{done, <<>>} ->
+			{done, []};
 		{done, Result} ->
 			{done, mongodb:decoderec(Query, Result)};
 		{Cursor, Result} ->
@@ -97,8 +138,10 @@ cursor(Query, Selector, Opts, From, Limit) ->
 	end.
 getMore(Rec, Cursor) ->
 	case mongodb:exec_getmore(Cursor) of
-		false ->
-			false;
+		not_connected ->
+			not_connected;
+		{done, <<>>} ->
+			{done, []};
 		{done, Result} ->
 			{done, mongodb:decoderec(Rec, Result)};
 		{ok, Result} ->
@@ -128,23 +171,6 @@ translateopts(Rec, [hint, Hint|T], L) ->
 	translateopts(Rec, T, [{<<"$hint">>, {bson, mongodb:encoderec_selector([Hint])}}|L]);
 translateopts(_, [], L) ->
 	L.
-
-find(Col, Query, Selector, From, Limit) ->
-	Quer = #quer{ndocs = Limit, nskip = From, quer = mongodb:encode(Query), field_selector = mongodb:encode(Selector)},
-	case mongodb:exec_find(name(Col), Quer) of
-		false ->
-			false;
-		Res ->
-			mongodb:decode(Res)
-	end.
-find(Query, Selector, From, Limit) ->
-	Quer = #quer{ndocs = Limit, nskip = From, quer = mongodb:encoderec(Query), field_selector = mongodb:encoderec_selector(Query, Selector)},
-	case mongodb:exec_find(name(element(1,Query)), Quer) of
-		false ->
-			false;
-		Result ->
-			mongodb:decoderec(Query, Result)
-	end.
 
 ensureIndex(Rec, Keys) ->
 	Bin = mongodb:encode([{plaintext, <<"name">>, mongodb:gen_keyname(Rec, Keys)}, 

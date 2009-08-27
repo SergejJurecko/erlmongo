@@ -83,8 +83,8 @@ replicaPairs(Addr1,Addr2) ->
 
 exec_cursor(Col, Quer) ->
 	case gen_server:call(?MODULE, {getread}) of
-		false ->
-			false;
+		undefined ->
+			not_connected;
 		PID ->
 			PID ! {find, self(), Col, Quer},
 			receive
@@ -98,7 +98,7 @@ exec_cursor(Col, Quer) ->
 						_ ->
 							PID = spawn_link(fun() -> cursorcleanup(true) end),
 							PID ! {start, CursorID},
-							{#cursor{id = CursorID, limit = Quer#quer.ndocs, pid = PID}, Result}
+							{#cursor{id = CursorID, limit = Quer#search.ndocs, pid = PID}, Result}
 					end
 				after 1000 ->
 					false
@@ -106,8 +106,8 @@ exec_cursor(Col, Quer) ->
 	end.
 exec_getmore(Col, C) ->
 	case gen_server:call(?MODULE, {getread}) of
-		false ->
-			false;
+		undefined ->
+			not_connected;
 		PID ->
 			PID ! {getmore, self(), Col, C},
 			receive
@@ -128,16 +128,16 @@ exec_getmore(Col, C) ->
 	end.
 exec_delete(Collection, D) ->
 	case gen_server:call(?MODULE, {getwrite}) of
-		false ->
-			false;
+		undefined ->
+			not_connected;
 		PID ->
 			PID ! {delete, Collection, D}
 	end,
 	ok.
 exec_find(Collection, Quer) ->
 	case gen_server:call(?MODULE, {getread}) of
-		false ->
-			false;
+		undefined ->
+			not_connected;
 		PID ->
 			PID ! {find, self(), Collection, Quer},
 			receive
@@ -152,25 +152,27 @@ exec_find(Collection, Quer) ->
 	end.
 exec_insert(Collection, D) ->
 	case gen_server:call(?MODULE, {getwrite}) of
-		false ->
-			false;
+		undefined ->
+			not_connected;
 		PID ->
 			PID ! {insert, Collection, D}
 	end,
 	ok.
 exec_update(Collection, D) ->
 	case gen_server:call(?MODULE, {getwrite}) of
-		false ->
-			false;
+		undefined ->
+			not_connected;
 		PID ->
 			PID ! {update, Collection, D}
 	end,
 	ok.
 exec_cmd(DB, Cmd) ->
-	Quer = #quer{ndocs = 1, nskip = 0, quer = mongodb:encode(Cmd)},
+	Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode(Cmd)},
 	case exec_find(<<DB/binary, ".$cmd">>, Quer) of
-		false ->
-			false;
+		undefined ->
+			not_connected;
+		<<>> ->
+			[];
 		Result ->
 			mongodb:decode(Result)
 	end.
@@ -350,7 +352,7 @@ init([]) ->
 	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private])}}.
 	
 % find_master([{A,P}|T]) ->
-% 	Q = #quer{ndocs = 1, nskip = 0, quer = mongodb:encode([{<<"ismaster">>, 1}])},
+% 	Q = #search{ndocs = 1, nskip = 0, quer = mongodb:encode([{<<"ismaster">>, 1}])},
 % 	
 				
 
@@ -418,7 +420,7 @@ connection(#con{state = free} = P) ->
 			{ok, Sock} = gen_tcp:connect(IP, Port, [binary, {packet, 0}, {active, true}, {keepalive, true}]),
 			case Type of
 				ifmaster ->
-					self() ! {find, Source, <<"admin.$cmd">>, #quer{nskip = 0, ndocs = 1, quer = mongodb:encode([{<<"ismaster">>, 1}])}};
+					self() ! {find, Source, <<"admin.$cmd">>, #search{nskip = 0, ndocs = 1, criteria = mongodb:encode([{<<"ismaster">>, 1}])}};
 				_ ->
 					Source ! {conn_established, Type, self()}
 			end,
@@ -462,8 +464,8 @@ constr_insert(U, Name) ->
 	<<Header/binary, Insert/binary>>.
 
 constr_query(U, Name) ->
-	Query = <<(U#quer.opts):32/little, Name/binary, 0:8, (U#quer.nskip):32/little, (U#quer.ndocs):32/little, 
-	  		  (U#quer.quer)/binary, (U#quer.field_selector)/binary>>,
+	Query = <<(U#search.opts):32/little, Name/binary, 0:8, (U#search.nskip):32/little, (U#search.ndocs):32/little, 
+	  		  (U#search.criteria)/binary, (U#search.field_selector)/binary>>,
 	Header = constr_header(byte_size(Query), random:uniform(4000000000), 0, ?OP_QUERY),
 	<<Header/binary,Query/binary>>.
 
@@ -511,6 +513,8 @@ encoderec(_, [], _, Bin) ->
 	<<(byte_size(Bin)+5):32/little, Bin/binary, 0:8>>.
 
 encoderec_selector(_, undefined) ->
+	<<>>;
+encoderec_selector(_, <<>>) ->
 	<<>>;
 encoderec_selector(Rec, SelectorList) ->
 	[_|Fields] = element(element(2, Rec), ?RECTABLE),
@@ -603,7 +607,9 @@ rec_field_list(RecVals, N, [Field|Fields], <<Type:8, Bin/binary>>) ->
 % 	hexstr_to_bin(T, [V | Acc]).
 
 encode(undefined) ->
-	<<>>;	
+	<<>>;
+encode(<<>>) ->
+	<<>>;
 encode(Items) ->
 	Bin = lists:foldl(fun(Item, B) -> <<B/binary, (encode_element(Item))/binary>> end, <<>>, Items),
     <<(byte_size(Bin)+5):32/little-signed, Bin/binary, 0:8>>.
