@@ -20,14 +20,31 @@ I haven't used erlmongo in production yet, so all the bugs might not be ironed o
   % Save a new document
   Mong:save(#mydoc{name = "MyDocument", i = 10}).
   % Return the document, but only the "i" field (+ _id which always gets returned)
-  Mong:findOne(#mydoc{i = 10}, [#mydoc.i]).
+  Mong:findOne(#mydoc{i = 10}, [#mydoc.name]).
   
+  % With proplists
+  Mong:save("mydoc", [{"name", "MyDocument"}, {"i", 10}]).
+  Mong:findOne("mydoc", [{"i", 10}], [{"name", 1}]).
 
   % Set Index. First parameter is so that the driver knows what collection 
   %  we mean. If you have an already constructed record laying around use that.
   %  No need to construct a new record just so the driver can read the name.
   % Second parameter the index we wish to create. 1 = ascending, -1 = descending.
   Mong:ensureIndex(#mydoc{}, [{#mydoc.i, 1}, {#mydoc.name, -1}])
+
+  % Find examples:
+
+  % Parameters: Search criteria, field selector, docs to skip, docs to return
+  Mong:find(#mydoc{i = 4}, [#mydoc.name], 0, 0).
+  % Same thing but with #search record that provides default parameters
+  Mong:find(#search{criteria = #mydoc{i = 4}, field_selector = [#mydoc.name]}).
+  
+  % Find with options
+  Mong:findOpt(#mydoc{i = 4}, undefined, [explain], 0, 0).
+  % Same thing as above
+  Mong:findOpt(#search{criteria = #mydoc{i = 4}}, [explain]).
+  % Also the same, with proplists
+  Mong:findOpt("mydoc", #search{criteria = [{"i",  4}]}, [explain]).
 
 == Supported operation list
 Collections

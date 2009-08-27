@@ -63,8 +63,7 @@ findOne(Query) when is_tuple(Query) ->
 	[Res] = find(Query, undefined, 0, 1),
 	Res.
 findOne(Col, [_|_] = Query, [_|_] = Selector) ->
-	[Res] = find(Col, Query, Selector, 0, 1),
-	Res.
+	find(Col, Query, Selector, 0, 1).
 
 find(Col, #search{} = Q) ->
 	find(Col, Q#search.criteria, Q#search.field_selector, Q#search.nskip, Q#search.ndocs).
