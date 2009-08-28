@@ -6,6 +6,13 @@ It supports records and proplists as datatypes. Strings can be lists or binaries
 The only built in limitation is in regards to record field names. They need to start with [a-z] (because of records) and be in latin1 (performance reason). Record values can of course be anything. It's a stupid idea to use non ascii characters as field names anyway.
 
 Because of the way records work in Erlang, they need to be declared in the erlmongo.hrl file. Erlmongo needs to be aware of the records it will be using at compile time. Which is why I would recommend you just take out the mongodb.erl gen_server, mongoapi.erl and erlmongo.hrl (or merge it into your own .hrl) and put them directly into your project.
+When you're using a selector (picking which fields in the document you wish to get from mongodb), they have to be in the same sequence as they were defined in the record.
+For instance:
+  % -record(mydoc {name, i}).
+  % This will work
+  Mong:findOne(#mydoc{i = 10}, [#mydoc.name, #mydoc.i]).
+  % This will NOT work
+  Mong:findOne(#mydoc{i = 10}, [#mydoc.i, #mydoc.name]).
 
 I haven't used erlmongo in production yet, so all the bugs might not be ironed out and there are a few inconsistencies with the api (I'll fix them in the near future).
 
