@@ -1,13 +1,13 @@
 % recindex is index of record in RECTABLE define, it has to be the first record field
 % docid is _id in mongodb, it has to be named docid and it has to be the second field in the record
--record(mydoc, {recindex = 1, docid, name, i, address}).
+-record(mydoc, {recindex = 1, docid, name, i, address, tags}).
 -record(address, {recindex = 2, docid, street, city, country}).
 % A table of records used with mongodb (tuple of record fields).
 % If you arent using an embedded record, you can use record_info(fields, name_of_record)
 % If a record uses an embedded record, you have to write the fields yourself
 %  and the field which is an embedded record is: {name_of_record, index_of_record_in_RECTABLE}
 %  field name also has to match the record name.
--define(RECTABLE, {[recindex,docid,name,i, {address, 2}],
+-define(RECTABLE, {[recindex,docid,name,i, {address, 2}, tags],
                    record_info(fields, address)}).
 
 

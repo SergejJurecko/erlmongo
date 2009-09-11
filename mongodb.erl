@@ -701,6 +701,22 @@ encode_element({Name, {array, Items}}) ->
   	% ItemList = lists:zip(ItemNames, Items),
   	% Binary = encode(ItemList),
   	<<4, Name/binary, 0, (encarray([], Items, 0))/binary>>;
+encode_element({Name, {bson, Bin}}) ->
+	<<3, Name/binary, 0, Bin/binary>>;
+encode_element({Name, {inc, Val}}) ->
+	encode_element({<<"$inc">>, [{Name, Val}]});
+encode_element({Name, {set, Val}}) ->
+	encode_element({<<"$set">>, [{Name, Val}]});
+encode_element({Name, {push, Val}}) ->
+	encode_element({<<"$push">>, [{Name, Val}]});
+encode_element({Name, {pushAll, Val}}) ->
+	encode_element({<<"$pushAll">>, [{Name, Val}]});
+encode_element({Name, {pop, Val}}) ->
+	encode_element({<<"$pop">>, [{Name, Val}]});
+encode_element({Name, {pull, Val}}) ->
+	encode_element({<<"$pull">>, [{Name, Val}]});
+encode_element({Name, {pullAll, Val}}) ->
+	encode_element({<<"$pullAll">>, [{Name, Val}]});
 encode_element({Name, {binary, 2, Data}}) ->
   	<<5, Name/binary, 0, (size(Data)+4):32/little-signed, 2:8, (size(Data)):32/little-signed, Data/binary>>;
 encode_element({Name, {binary, SubType, Data}}) ->
@@ -715,8 +731,6 @@ encode_element({Name, Value}) when is_integer(Value) ->
 	<<18, Name/binary, 0, Value:64/little-signed>>;
 encode_element({Name, Value}) when is_float(Value) ->
 	<<1, (Name)/binary, 0, Value:64/little-signed-float>>;
-encode_element({Name, {bson, Bin}}) ->
-	<<3, Name/binary, 0, Bin/binary>>;
 encode_element({Name, {obj, []}}) ->
 	<<3, Name/binary, 0, (encode([]))/binary>>;	
 encode_element({Name, {MegaSecs, Secs, MicroSecs}}) when  is_integer(MegaSecs),is_integer(Secs),is_integer(MicroSecs) ->

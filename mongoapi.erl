@@ -32,11 +32,26 @@ save(Rec) ->
 	end.
 
 
-update(Collection, [_|_] = Selector, [_|_] = Doc) ->
-	mongodb:exec_update(name(Collection), #update{selector = mongodb:encode(Selector), document = mongodb:encode(Doc)}).
-% update([{#mydoc.name, "docname"}], #mydoc{})
-update(Selector, Rec) ->
-	mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encoderec_selector(Rec, Selector), document = mongodb:encoderec(Rec)}).
+update(Collection, [_|_] = Selector, [_|_] = Doc, true) ->
+	update(Collection, [_|_] = Selector, [_|_] = Doc, 1);
+update(Collection, [_|_] = Selector, [_|_] = Doc, false) ->
+	update(Collection, [_|_] = Selector, [_|_] = Doc, 0);
+update(Collection, [_|_] = Selector, [_|_] = Doc, Upsert) ->
+	mongodb:exec_update(name(Collection), #update{selector = mongodb:encode(Selector), document = mongodb:encode(Doc), upsert = Upsert}).
+% Examples: 
+%  update([{#mydoc.name, "docname"}], #mydoc{name = "different name"}, 1)
+%  update([{#mydoc.name, "docname"}], #mydoc{i = {inc, 1}}, 1)
+%  update([{#mydoc.name, "docname"}], #mydoc{tags = {push, "lamer"}}, 1)
+%  update([{#mydoc.name, "docname"}], #mydoc{tags = {pushAll, {array, ["dumbass","jackass"]}}}, 1)
+%  and so on. 
+% modifier list: inc, set, push, pushAll, pop, pull, pullAll
+update(Selector, Rec, true) ->
+	update(Selector, Rec, 1);
+update(Selector, Rec, false) ->
+	update(Selector, Rec, 0);
+update(Selector, Rec, Upsert) ->
+	mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encoderec_selector(Rec, Selector), upsert = Upsert,
+	 												  document = mongodb:encoderec(Rec)}).
 
 insert(Col, [_|_] = L) ->
 	mongodb:exec_insert(name(Col), #insert{documents = mongodb:encode(L)}).
