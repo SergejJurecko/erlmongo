@@ -53,6 +53,10 @@ I haven't used erlmongo in production yet, so all the bugs might not be ironed o
   % Also the same, with proplists
   Mong:findOpt("mydoc", #search{criteria = [{"i",  4}]}, [explain]).
 
+  % Embedded records
+  Mong:save(#mydoc{name = "zembedom", i = 10, address = #address{city = "ny", street = "some", country = "us"}}).
+  Mong:find(#mydoc{address = #address{city = "la"}}, undefined, 0, 0).
+
 == Supported operation list
 Collections
 * remove

@@ -81,7 +81,7 @@ find(Col, Query, Selector, From, Limit) ->
 			mongodb:decode(Res)
 	end.
 find(Query, Selector, From, Limit) ->
-	Quer = #search{ndocs = Limit, nskip = From, criteria = mongodb:encoderec(Query), field_selector = mongodb:encoderec_selector(Query, Selector)},
+	Quer = #search{ndocs = Limit, nskip = From, criteria = mongodb:encode_findrec(Query), field_selector = mongodb:encoderec_selector(Query, Selector)},
 	case mongodb:exec_find(name(element(1,Query)), Quer) of
 		not_connected ->
 			not_connected;
@@ -89,6 +89,13 @@ find(Query, Selector, From, Limit) ->
 			[];
 		Result ->
 			mongodb:decoderec(Query, Result)
+			% try mongodb:decoderec(Query, Result) of
+			% 	Res ->
+			% 		Res
+			% catch
+			% 	error:_ ->
+			% 		mongodb:decode(Result)
+			% end
 	end.
 
 % opts: [reverse, {sort, SortyBy}, explain, {hint, Hint}, snapshot]
@@ -100,7 +107,7 @@ findOpt(Col, Query, Selector, Opts, From, Limit) ->
 % Hint example: #mydoc.name
 findOpt(Query, Selector, Opts, From, Limit) ->
 	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
-	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encoderec(Query)}}]))}, 
+	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}]))}, 
 	case mongodb:exec_find(name(element(1,Query)), Quer) of
 		not_connected ->
 			not_connected;
@@ -123,7 +130,7 @@ findOpt(#search{} = Q, Opts) ->
 	
 cursor(Query, Selector, Opts, From, Limit) ->
 	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
-	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encoderec(Query)}}])),
+	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}])),
 				 opts = ?QUER_OPT_CURSOR},
 	case mongodb:exec_cursor(name(element(1,Query)), Quer) of
 		not_connected ->
