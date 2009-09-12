@@ -732,13 +732,13 @@ encode_element({Name, {set, Val}}) ->
 encode_element({Name, {push, Val}}) ->
 	encode_element({<<"$push">>, [{Name, Val}]});
 encode_element({Name, {pushAll, Val}}) ->
-	encode_element({<<"$pushAll">>, [{Name, Val}]});
+	encode_element({<<"$pushAll">>, [{Name, {array, Val}}]});
 encode_element({Name, {pop, Val}}) ->
 	encode_element({<<"$pop">>, [{Name, Val}]});
 encode_element({Name, {pull, Val}}) ->
 	encode_element({<<"$pull">>, [{Name, Val}]});
 encode_element({Name, {pullAll, Val}}) ->
-	encode_element({<<"$pullAll">>, [{Name, Val}]});
+	encode_element({<<"$pullAll">>, [{Name, {array, Val}}]});
 encode_element({Name, {gt, Val}}) ->
 	encode_element({Name, [{<<"$gt">>, Val}]});
 encode_element({Name, {lt, Val}}) ->

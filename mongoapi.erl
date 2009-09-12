@@ -42,7 +42,8 @@ update(Collection, [_|_] = Selector, [_|_] = Doc, Upsert) ->
 %  update([{#mydoc.name, "docname"}], #mydoc{name = "different name"}, 1)
 %  update([{#mydoc.name, "docname"}], #mydoc{i = {inc, 1}}, 1)
 %  update([{#mydoc.name, "docname"}], #mydoc{tags = {push, "lamer"}}, 1)
-%  update([{#mydoc.name, "docname"}], #mydoc{tags = {pushAll, {array, ["dumbass","jackass"]}}}, 1)
+%  update([{#mydoc.name, "docname"}], #mydoc{tags = {pushAll, ["dumbass","jackass"]}}, 1)
+%  update([{#mydoc.name, "docname"}], #mydoc{tags = {pullAll, ["dumbass","jackass"]}}, 1)
 %  and so on. 
 % modifier list: inc, set, push, pushAll, pop, pull, pullAll
 update(Selector, Rec, true) ->
