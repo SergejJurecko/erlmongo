@@ -2,7 +2,8 @@
 -export([deser_prop/1,reload/0, print_info/0, start/0, stop/0, init/1, handle_call/3, 
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([connect/0, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
-         encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, decoderec/2, encode/1, decode/1,
+         encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, 
+         decoderec/2, encode/1, decode/1, ensureIndex/2,
          singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2]).
 -include_lib("erlmongo.hrl").
 % -define(RIN, record_info(fields, enctask)).
@@ -80,6 +81,9 @@ replicaPairs(Addr1,Addr2) ->
 	[Addr1,Port1] = string:tokens(Addr1,":"),
 	[Addr2,Port2] = string:tokens(Addr2,":"),
 	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {Addr1,Port1}, {Addr2,Port2}}}).
+	
+ensureIndex(DB,Bin) ->
+	gen_server:cast(?MODULE, {ensure_index, DB, Bin}).
 
 exec_cursor(Col, Quer) ->
 	case gen_server:call(?MODULE, {getread}) of
@@ -216,11 +220,11 @@ startcon(undefined, Type, Addr,Port) ->
 startcon(PID, _, _, _) ->
 	PID.
 	
-handle_cast({ensure_index, Bin}, P) ->
-	case ets:lookup(P#mngd.indexes, Bin) of
+handle_cast({ensure_index, DB, Bin}, P) ->
+	case ets:lookup(P#mngd.indexes, {DB,Bin}) of
 		[] ->
-			spawn(fun() -> exec_insert(<<"system.indexes">>, #insert{documents = Bin}) end),
-			ets:insert(P#mngd.indexes, {Bin});
+			spawn(fun() -> exec_insert(<<DB/binary, ".system.indexes">>, #insert{documents = Bin}) end),
+			ets:insert(P#mngd.indexes, {{DB,Bin}});
 		_ ->
 			true
 	end,
@@ -573,6 +577,19 @@ encoderec_selector(Indexes, [_|Names], Index, Bin) ->
 	encoderec_selector(Indexes, Names, Index+1, Bin);
 encoderec_selector([], _, _, Bin) ->
 	<<(byte_size(Bin)+5):32/little, Bin/binary, 0:8>>.
+
+gen_prop_keyname([{[_|_] = KeyName, KeyVal}|T], Bin) ->
+	gen_prop_keyname([{list_to_binary(KeyName), KeyVal}|T], Bin);
+gen_prop_keyname([{KeyName, KeyVal}|T], Bin) ->
+	case is_integer(KeyVal) of
+		true ->
+			Add = <<(list_to_binary(integer_to_list(KeyVal)))/binary>>;
+		false ->
+			Add = <<>>
+	end,
+	gen_prop_keyname(T, <<Bin/binary, KeyName/binary, "_", Add/binary>>);
+gen_prop_keyname([], B) ->
+	B.
 	
 gen_keyname(Rec, Keys) ->
 	[_|Fields] = element(element(2, Rec), ?RECTABLE),

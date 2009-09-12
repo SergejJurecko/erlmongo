@@ -193,11 +193,22 @@ translateopts(Rec, [hint, Hint|T], L) ->
 translateopts(_, [], L) ->
 	L.
 
+% If you wish to index on an embedded document, use proplists.
+% Example: ensureIndex(<<"mydoc">>, [{<<"name">>, 1}]).
+%  You can use lists, they will be turned into binaries.
+ensureIndex([_|_] = Collection, Keys) ->
+	ensureIndex(list_to_binary(Collection), Keys);
+ensureIndex(<<_/binary>> = Collection, Keys) ->
+	Bin = mongodb:encode([{plaintext, <<"name">>, mongodb:gen_prop_keyname(Keys, <<>>)},
+	 					  {plaintext, <<"ns">>, name(Collection)},
+	                      {<<"key">>, {bson, mongodb:encode(Keys)}}]),
+	mongodb:ensureIndex(DB, Bin);
+% Example: ensureIndex(#mydoc{}, [{#mydoc.name, 1}])
 ensureIndex(Rec, Keys) ->
 	Bin = mongodb:encode([{plaintext, <<"name">>, mongodb:gen_keyname(Rec, Keys)}, 
 			              {plaintext, <<"ns">>, name(element(1,Rec))}, 
 			              {<<"key">>, {bson, mongodb:encoderec_selector(Rec, Keys)}}]),
-	mongodb:exec_insert(<<DB/binary, ".system.indexes">>, #insert{documents = Bin}).
+	mongodb:ensureIndex(DB, Bin).
 	
 deleteIndexes([_|_] = Collection) ->
 	deleteIndexes(list_to_binary(Collection));
