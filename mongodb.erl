@@ -755,7 +755,7 @@ encode_element({Name, {in, {FE,FV},{TE,TV}}}) ->
 encode_element({Name, {in, Val}}) ->
 	encode_element({Name, [{<<"$in">>, {array, Val}}]});
 encode_element({Name, {nin, Val}}) ->
-	encode_element({Name, [{<<"$nin">>, Val}]});
+	encode_element({Name, [{<<"$nin">>, {array, Val}}]});
 encode_element({Name, {mod, By,Rem}}) ->
 	encode_element({Name, [{<<"$mod">>, {array, [By,Rem]}}]});
 encode_element({Name, {all, Val}}) ->
