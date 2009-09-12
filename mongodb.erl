@@ -3,7 +3,7 @@
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([connect/0, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
          encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, 
-         decoderec/2, encode/1, decode/1, ensureIndex/2,
+         decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0,
          singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2]).
 -include_lib("erlmongo.hrl").
 % -define(RIN, record_info(fields, enctask)).
@@ -84,6 +84,8 @@ replicaPairs(Addr1,Addr2) ->
 	
 ensureIndex(DB,Bin) ->
 	gen_server:cast(?MODULE, {ensure_index, DB, Bin}).
+clearIndexCache() ->
+	gen_server:cast(?MODULE, {clear_indexcache}).
 
 exec_cursor(Col, Quer) ->
 	case gen_server:call(?MODULE, {getread}) of

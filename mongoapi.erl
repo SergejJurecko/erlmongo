@@ -213,9 +213,11 @@ ensureIndex(Rec, Keys) ->
 deleteIndexes([_|_] = Collection) ->
 	deleteIndexes(list_to_binary(Collection));
 deleteIndexes(<<_/binary>> = Collection) ->
+	mongodb:clearIndexCache(),
 	mongodb:exec_cmd(DB, [{plaintext, <<"deleteIndexes">>, Collection}, {plaintext, <<"index">>, <<"*">>}]).
 
 deleteIndex(Rec, Key) ->
+	mongodb:clearIndexCache(),
 	mongodb:exec_cmd(DB,[{plaintext, <<"deleteIndexes">>, atom_to_binary(element(1,Rec), latin1)},
 				  		 {plaintext, <<"index">>, mongodb:gen_keyname(Rec,Key)}]).
 
