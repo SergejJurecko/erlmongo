@@ -65,6 +65,15 @@ batchInsert(LRecs) ->
 	[FRec|_] = LRecs,
 	DocBin = lists:foldl(fun(Rec, Bin) -> <<Bin/binary, (mongodb:encoderec(Rec))/binary>> end, <<>>, LRecs),
 	mongodb:exec_insert(name(element(1,FRec)), #insert{documents = DocBin}).
+	
+	
+% Advanced queries:
+%  Documents with even i:            Mong:find(#mydoc{i = {mod, 2, 0}}, undefined, 0,0).
+%  Documents with i larger than 2:   Mong:find(#mydoc{i = {gt, 2}}, undefined, 0,0).
+%  Documents with i between 2 and 5: Mong:find(#mydoc{i = {in, {gt, 2}, {lt, 5}}}, undefined, 0,0).
+%  in example:     Mong:find(#mydoc{tags = {in, [2,3,4]}}, undefined, 0,0).
+%  exists example: Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
+%  Advanced query options: gt,lt,gte,lte, ne, in, nin, all, size, exists
 
 findOne(Col, []) ->
 	find(Col, [], undefined, 0, 1);

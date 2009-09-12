@@ -57,6 +57,18 @@ I haven't used erlmongo in production yet, so all the bugs might not be ironed o
   Mong:save(#mydoc{name = "zembedom", i = 10, address = #address{city = "ny", street = "some", country = "us"}}).
   Mong:find(#mydoc{address = #address{city = "la"}}, undefined, 0, 0).
 
+  % Advanced queries (supported: gt, lt, gte, lte, ne, in, nin, all, size, exists):
+  % Documents with even i
+  Mong:find(#mydoc{i = {mod, 2, 0}}, undefined, 0,0).
+  % Documents with i larger than 2:
+  Mong:find(#mydoc{i = {gt, 2}}, undefined, 0,0).
+  % Documents with i between 2 and 5: 
+  Mong:find(#mydoc{i = {in, {gt, 2}, {lt, 5}}}, undefined, 0,0).
+  % in example: 
+  Mong:find(#mydoc{tags = {in, [2,3,4]}}, undefined, 0,0).
+  % exists example: 
+  Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
+
 == Supported operation list
 Collections
 * remove

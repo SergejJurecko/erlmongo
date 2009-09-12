@@ -702,6 +702,9 @@ encode_element({[_|_] = Name, Val}) ->
 encode_element({Name, [{_,_}|_] = Items}) ->
 	Binary = encode(Items),
 	<<3, Name/binary, 0, Binary/binary>>;
+% encode_element({where, Val}) ->
+% 	ValueEncoded = encode_cstring(Val),
+% 	<<2, "$where", 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
 encode_element({Name, [_|_] = Value}) ->
 	ValueEncoded = encode_cstring(Value),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
@@ -736,6 +739,31 @@ encode_element({Name, {pull, Val}}) ->
 	encode_element({<<"$pull">>, [{Name, Val}]});
 encode_element({Name, {pullAll, Val}}) ->
 	encode_element({<<"$pullAll">>, [{Name, Val}]});
+encode_element({Name, {gt, Val}}) ->
+	encode_element({Name, [{<<"$gt">>, Val}]});
+encode_element({Name, {lt, Val}}) ->
+	encode_element({Name, [{<<"$lt">>, Val}]});
+encode_element({Name, {lte, Val}}) ->
+	encode_element({Name, [{<<"$lte">>, Val}]});
+encode_element({Name, {gte, Val}}) ->
+	encode_element({Name, [{<<"$gte">>, Val}]});
+encode_element({Name, {ne, Val}}) ->
+	encode_element({Name, [{<<"$ne">>, Val}]});
+encode_element({Name, {in, {FE,FV},{TE,TV}}}) ->
+	encode_element({Name, [{<<"$", (atom_to_binary(FE,latin1))/binary>>, FV},
+						   {<<"$", (atom_to_binary(TE,latin1))/binary>>, TV}]});
+encode_element({Name, {in, Val}}) ->
+	encode_element({Name, [{<<"$in">>, {array, Val}}]});
+encode_element({Name, {nin, Val}}) ->
+	encode_element({Name, [{<<"$nin">>, Val}]});
+encode_element({Name, {mod, By,Rem}}) ->
+	encode_element({Name, [{<<"$mod">>, {array, [By,Rem]}}]});
+encode_element({Name, {all, Val}}) ->
+	encode_element({Name, [{<<"$all">>, {array, Val}}]});
+encode_element({Name, {size, Val}}) ->
+	encode_element({Name, [{<<"$size">>, Val}]});
+encode_element({Name, {exists, Val}}) ->
+	encode_element({Name, [{<<"$exists">>, Val}]});
 encode_element({Name, {binary, 2, Data}}) ->
   	<<5, Name/binary, 0, (size(Data)+4):32/little-signed, 2:8, (size(Data)):32/little-signed, Data/binary>>;
 encode_element({Name, {binary, SubType, Data}}) ->
