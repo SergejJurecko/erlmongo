@@ -3,7 +3,7 @@
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([connect/0, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
          encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, 
-         decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0,
+         decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0, create_id/0,
          singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2]).
 -include_lib("erlmongo.hrl").
 % -define(RIN, record_info(fields, enctask)).
@@ -137,9 +137,9 @@ exec_delete(Collection, D) ->
 		undefined ->
 			not_connected;
 		PID ->
-			PID ! {delete, Collection, D}
-	end,
-	ok.
+			PID ! {delete, Collection, D},
+			ok
+	end.
 exec_find(Collection, Quer) ->
 	case gen_server:call(?MODULE, {getread}) of
 		undefined ->
@@ -161,17 +161,17 @@ exec_insert(Collection, D) ->
 		undefined ->
 			not_connected;
 		PID ->
-			PID ! {insert, Collection, D}
-	end,
-	ok.
+			PID ! {insert, Collection, D},
+			ok
+	end.
 exec_update(Collection, D) ->
 	case gen_server:call(?MODULE, {getwrite}) of
 		undefined ->
 			not_connected;
 		PID ->
-			PID ! {update, Collection, D}
-	end,
-	ok.
+			PID ! {update, Collection, D},
+			ok
+	end.
 exec_cmd(DB, Cmd) ->
 	Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode(Cmd)},
 	case exec_find(<<DB/binary, ".$cmd">>, Quer) of
@@ -183,6 +183,8 @@ exec_cmd(DB, Cmd) ->
 			mongodb:decode(Result)
 	end.
 
+create_id() ->
+	dec2hex(<<>>, gen_server:call(?MODULE, {create_oid})).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 %								IMPLEMENTATION
@@ -196,7 +198,7 @@ exec_cmd(DB, Cmd) ->
 %   masterMaster: read = master1, write = master2
 % timer is reconnect timer if some connection is missing
 % indexes is ensureIndex cache (an ets table).
--record(mngd, {read, write, conninfo, indexes, timer}).
+-record(mngd, {read, write, conninfo, indexes, timer, hashed_hostn, oid_index = 1}).
 -define(R2P(Record), rec2prop(Record, record_info(fields, mngd))).
 -define(P2R(Prop), prop2rec(Prop, mngd, #mngd{}, record_info(fields, mngd))).	
 	
@@ -204,6 +206,12 @@ handle_call({getread}, _, P) ->
 	{reply, P#mngd.read, P};
 handle_call({getwrite}, _, P) ->
 	{reply, P#mngd.write, P};
+handle_call({create_oid}, _, P) ->
+	% {_,_,Micros} = now(),
+	WC = element(1,erlang:statistics(wall_clock)) rem 16#ffffffff,
+	<<_:20/binary,PID:2/binary,_/binary>> = term_to_binary(self()),
+	N = P#mngd.oid_index rem 16#ffffff,
+	{reply, <<WC:32, (P#mngd.hashed_hostn)/binary, PID/binary, N:24>>, P#mngd{oid_index = P#mngd.oid_index + 1}};
 handle_call(stop, _, P) ->
 	{stop, shutdown, stopped, P};
 handle_call({reload_module}, _, P) ->
@@ -354,8 +362,10 @@ code_change(_, P, _) ->
 	{ok, P}.
 init([]) ->
 	% timer:send_interval(1000, {timeout}),
+	{ok, HN} = inet:gethostname(),
+	<<HashedHN:3/binary,_/binary>> = erlang:md5(HN),
 	process_flag(trap_exit, true),
-	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private])}}.
+	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private]), hashed_hostn = HashedHN}}.
 	
 % find_master([{A,P}|T]) ->
 % 	Q = #search{ndocs = 1, nskip = 0, quer = mongodb:encode([{<<"ismaster">>, 1}])},
@@ -678,16 +688,32 @@ rec_field_list(RecVals, N, [Field|Fields], <<Type:8, Bin/binary>>) ->
 	end.
 
 
-% bin_to_hexstr(Bin) ->
-% 	lists:flatten([io_lib:format("~2.16.0B", [X]) || X <- binary_to_list(Bin)]).
-% 
-% hexstr_to_bin(S) ->
-% 	hexstr_to_bin(S, []).
-% hexstr_to_bin([], Acc) ->
-% 	list_to_binary(lists:reverse(Acc));
-% hexstr_to_bin([X,Y|T], Acc) ->
-% 	{ok, [V], []} = io_lib:fread("~16u", [X,Y]),
-% 	hexstr_to_bin(T, [V | Acc]).
+dec2hex(N, <<I:8,Rem/binary>>) ->
+	dec2hex(<<N/binary, (hex0((I band 16#f0) bsr 4)):8, (hex0((I band 16#0f))):8>>, Rem);
+dec2hex(N,<<>>) ->
+	N.
+
+hex2dec(N,<<A:8,B:8,Rem/binary>>) ->
+	hex2dec(<<N/binary, ((dec0(A) bsl 4) + dec0(B)):8>>, Rem);
+hex2dec(N,<<>>) ->
+	N.
+
+dec0($a) ->	10;
+dec0($b) ->	11;
+dec0($c) ->	12;
+dec0($d) ->	13;
+dec0($e) ->	14;
+dec0($f) ->	15;
+dec0(X) ->	X - $0.
+
+hex0(10) -> $a;
+hex0(11) -> $b;
+hex0(12) -> $c;
+hex0(13) -> $d;
+hex0(14) -> $e;
+hex0(15) -> $f;
+hex0(I) ->  $0 + I.
+
 
 encode(undefined) ->
 	<<>>;
@@ -717,6 +743,12 @@ encode_element({Name, true}) ->
 	<<8, Name/binary, 0, 1:8>>;
 encode_element({Name, false}) ->
 	<<8, Name/binary, 0, 0:8>>;	
+% <<First:8/little-binary-unit:8, Second:4/little-binary-unit:8>>
+encode_element({Name, {oid, OID}}) ->
+	%   	FirstReversed = lists:reverse(binary_to_list(First)),
+	%   	SecondReversed = lists:reverse(binary_to_list(Second)),
+	% OID = list_to_binary(lists:append(FirstReversed, SecondReversed)),
+	<<7, Name/binary, 0, (hex2dec(<<>>, OID))/binary>>;
 % list of lists = array
 encode_element({Name, {array, Items}}) ->
   	% ItemNames = [integer_to_list(Index) || Index <- lists:seq(0, length(Items)-1)],
@@ -769,11 +801,6 @@ encode_element({Name, {binary, 2, Data}}) ->
 encode_element({Name, {binary, SubType, Data}}) ->
   	StringEncoded = encode_cstring(Name),
   	<<5, StringEncoded/binary, (size(Data)):32/little-signed, SubType:8, Data/binary>>;
-encode_element({Name, {oid, <<First:8/little-binary-unit:8, Second:4/little-binary-unit:8>>}}) ->
-  	FirstReversed = lists:reverse(binary_to_list(First)),
-  	SecondReversed = lists:reverse(binary_to_list(Second)),
-	OID = list_to_binary(lists:append(FirstReversed, SecondReversed)),
-	<<7, Name/binary, 0, OID/binary>>;
 encode_element({Name, Value}) when is_integer(Value) ->
 	<<18, Name/binary, 0, Value:64/little-signed>>;
 encode_element({Name, Value}) when is_float(Value) ->
@@ -870,11 +897,12 @@ decode_value(_Type = 5, <<Size:32/little-signed, SubType:8/little, BinData:Size/
   	{{binary, SubType, BinData}, Rest};
 decode_value(_Type = 6, _Binary) ->
   	throw(encountered_undefined);
-decode_value(_Type = 7, <<First:8/little-binary-unit:8, Second:4/little-binary-unit:8, Rest/binary>>) ->
-  	FirstReversed = lists:reverse(binary_to_list(First)),
-  	SecondReversed = lists:reverse(binary_to_list(Second)),
-  	OID = list_to_binary(lists:append(FirstReversed, SecondReversed)),
-  	{{oid, OID}, Rest};
+% <<First:8/little-binary-unit:8, Second:4/little-binary-unit:8, Rest/binary>>
+decode_value(_Type = 7, <<OID:12/binary,Rest/binary>>) ->
+  	% FirstReversed = lists:reverse(binary_to_list(First)),
+  	% SecondReversed = lists:reverse(binary_to_list(Second)),
+  	% OID = list_to_binary(lists:append(FirstReversed, SecondReversed)),
+  	{{oid, dec2hex(<<>>, OID)}, Rest};
 decode_value(_Type = 8, <<0:8, Rest/binary>>) ->
 	{false, Rest};
 decode_value(_Type = 8, <<1:8, Rest/binary>>) ->

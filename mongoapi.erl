@@ -15,20 +15,43 @@ remove(Rec, Selector) when is_tuple(Rec) ->
 remove(Col, Selector) ->
 	mongodb:exec_delete(name(Col), #delete{selector = mongodb:encode(Selector)}).
 	
+	
 save(Collection, [_|_] = L) ->
 	% io:format("Save on ~p~n", [L]),
 	case lists:keysearch(<<"_id">>, 1, L) of
 		false ->
-			mongodb:exec_insert(name(Collection), #insert{documents = mongodb:encode(L)});
-		{value, {_, ID}} ->
-			mongodb:exec_update(name(Collection), #update{selector = mongodb:encode([{"_id", ID}]), document = mongodb:encode(L)})
+			OID = mongodb:create_id(),
+			case mongodb:exec_insert(name(Collection), #insert{documents = mongodb:encode([{<<"_id">>, {oid, OID}}|L])}) of
+				ok ->
+					{oid, OID};
+				R ->
+					R
+			end;
+		{value, {_, OID}} ->
+			case mongodb:exec_update(name(Collection), #update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encode(L)}) of
+				ok ->
+					{oid, OID};
+				R ->
+					R
+			end
 	end.
 save(Rec) -> 
 	case element(3, Rec) of
 		undefined ->
-			mongodb:exec_insert(name(element(1,Rec)), #insert{documents = mongodb:encoderec(Rec)});
-		ID ->
-			mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encode([{"_id", ID}]), document = mongodb:encoderec(Rec)})
+			OID = mongodb:create_id(),
+			case mongodb:exec_insert(name(element(1,Rec)), #insert{documents = mongodb:encoderec(setelement(3, Rec, {oid, OID}))}) of
+				ok ->
+					{oid, OID};
+				R ->
+					R
+			end;
+		OID ->
+			case mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encoderec(Rec)}) of
+				ok ->
+					{oid, OID};
+				R ->
+					R
+			end
 	end.
 
 
@@ -264,6 +287,11 @@ runCmd([_|_] = L) ->
 	runCmd([{L,1}]);
 runCmd(<<_/binary>> = L) ->
 	runCmd(binary_to_list(L)).
+
+stats(C) when is_tuple(C) ->
+	stats(atom_to_binary(element(1,C),latin1));
+stats(Collection) ->
+	runCmd([{"collstats", Collection}]).
 
 repairDatabase() ->
 	runCmd([{"repairDatabase", 1}]).
