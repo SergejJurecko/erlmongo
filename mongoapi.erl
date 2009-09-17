@@ -41,14 +41,14 @@ save(Rec) ->
 			OID = mongodb:create_id(),
 			case mongodb:exec_insert(name(element(1,Rec)), #insert{documents = mongodb:encoderec(setelement(3, Rec, {oid, OID}))}) of
 				ok ->
-					{oid, OID};
+					OID;
 				R ->
 					R
 			end;
 		OID ->
 			case mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encoderec(Rec)}) of
 				ok ->
-					{oid, OID};
+					OID;
 				R ->
 					R
 			end

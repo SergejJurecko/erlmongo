@@ -540,7 +540,7 @@ encoderec(NameRec, Type, Rec, [FieldName|T], N, Bin) ->
 		Val ->
 			case FieldName of
 				docid ->
-					encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({<<"_id">>, Val}))/binary>>);
+					encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({<<"_id">>, {oid, Val}}))/binary>>);
 				_ ->
 					case NameRec of
 						<<>> ->
@@ -570,7 +570,7 @@ encoderec_selector(Rec, SelectorList) ->
 encoderec_selector([{FieldIndex, Val}|Fields], [FieldName|FieldNames], FieldIndex, Bin) ->
 	case FieldName of
 		docid ->
-			encoderec_selector(Fields, FieldNames, FieldIndex+1, <<Bin/binary, (encode_element({<<"_id">>, Val}))/binary>>);
+			encoderec_selector(Fields, FieldNames, FieldIndex+1, <<Bin/binary, (encode_element({<<"_id">>, {oid, Val}}))/binary>>);
 		{Name, _RecIndex} ->
 			encoderec_selector(Fields, FieldNames, FieldIndex+1, <<Bin/binary, (encode_element({atom_to_binary(Name,latin1), Val}))/binary>>);
 		_ ->
@@ -681,7 +681,12 @@ rec_field_list(RecVals, N, [Field|Fields], <<Type:8, Bin/binary>>) ->
 					rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain);
 				_ ->
 					{Value, Remain} = decode_value(Type, ValRem),
-					rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain)
+					case Value of
+						{oid, V} ->
+							rec_field_list([{N, V}|RecVals], N+1, Fields, Remain);
+						_ ->
+							rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain)
+					end
 			end;
 		_ ->
 			rec_field_list(RecVals, N+1, Fields, <<Type:8, Bin/binary>>)
