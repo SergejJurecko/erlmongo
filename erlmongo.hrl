@@ -2,14 +2,23 @@
 % docid is _id in mongodb, it has to be named docid and it has to be the second field in the record
 -record(mydoc, {recindex = 1, docid, name, i, address, tags}).
 -record(address, {recindex = 2, docid, street, city, country}).
+% metadata is an embedded document,
+-record(gfs_file, {recindex = 3, docid, filename, contentType, length, chunkSize, uploadDate, aliases, metadata, md5}).
+-record(gfs_chunk, {recindex = 4, docid, files_id, n, data}).
 % A table of records used with mongodb (tuple of record fields).
 % If you arent using an embedded record, you can use record_info(fields, name_of_record)
 % If a record uses an embedded record, you have to write the fields yourself
 %  and the field which is an embedded record is: {name_of_record, index_of_record_in_RECTABLE}
 %  field name also has to match the record name.
 -define(RECTABLE, {[recindex,docid,name,i, {address, 2}, tags],
-                   record_info(fields, address)}).
+                   record_info(fields, address),
+				   % If you wish to use metadata embedded record.
+				   % recindex, docid, filename, contentType, length, chunkSize, uploadDate, aliases, {metadata, INDEX_HERE}, md5
+				   record_info(fields, gfs_file),
+				   record_info(fields, gfs_chunk)}).
 
+-record(gfs_state,{proc, db, file, collection, length = 0, mode,
+				   nchunk = 0, flush_limit = 1048576, closed = false}).
 
 -export([rec2prop/2, prop2rec/4]).
 

@@ -69,6 +69,22 @@ I haven't used erlmongo in production yet, so all the bugs might not be ironed o
   % exists example: 
   Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
 
+  % GridFS
+  {ok, Bin} = file:read_file("SomeFile").
+  % To open file for writing, use gfsNew
+  PID = Mong:gfsNew("myfile").
+  % You can set parameters: mime, meta (embedded document), aliases (array of names), chunk size (default 256k)
+  %                         flushLimit (at which buffer size data gets flushed to mongodb, def. 1MB)
+  % PID = Mong:gfsNew("myfile", [{chunkSize, 100}]).
+  % You can also set collection name (default is fd)
+  % PID = Mong:gfsNew("myfilecol", "myfile", []).
+  Mong:gfsWrite(PID,Bin).
+  Mong:gfsClose(PID).
+  % Reading
+  PID = Mong:gfsOpen(#gfs_file{filename = "myfile"}).
+  Res = Mong:gfsRead(PID,100000).
+  Mong:gfsClose(PID).
+
 == Supported operation list
 Collections
 * remove
@@ -97,6 +113,15 @@ DB
 * addUser
 * setProfilingLevel
 * getProfilingLevel
+
+GridFS
+* gfsNew
+* gfsWrite
+* gfsOpen
+* gfsRead
+* gfsDelete
+* gfsFlush
+* gfsClose
 
 == Author
  Sergej Jurečko

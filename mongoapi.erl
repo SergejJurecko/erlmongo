@@ -46,7 +46,8 @@ save(Rec) ->
 					R
 			end;
 		OID ->
-			case mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encoderec(Rec)}) of
+			case mongodb:exec_update(name(element(1,Rec)), 
+								#update{selector = mongodb:encode([{<<"_id">>, {oid, OID}}]), document = mongodb:encoderec(Rec)}) of
 				ok ->
 					OID;
 				R ->
@@ -100,18 +101,31 @@ batchInsert(LRecs) ->
 %  Advanced query options: gt,lt,gte,lte, ne, in, nin, all, size, exists
 
 findOne(Col, []) ->
-	find(Col, [], undefined, 0, 1);
+	case find(Col, [], undefined, 0, 1) of
+		[Res] -> Res;
+		[] -> []
+	end;
 findOne(Col, [_|_] = Query) when is_tuple(Col) == false ->
-	find(Col, Query, undefined, 0, 0);
+	case find(Col, Query, undefined, 0, 1) of
+		[Res] -> Res;
+		[] -> []
+	end;
 findOne(Query, Selector) when is_tuple(Query) ->
-	[Res] = find(Query, Selector, 0, 1),
-	Res.
+	case find(Query, Selector, 0, 1) of
+		[Res] -> Res;
+		[] -> []
+	end.
 	
 findOne(Query) when is_tuple(Query) ->
-	[Res] = find(Query, undefined, 0, 1),
-	Res.
+	case find(Query, undefined, 0, 1) of
+		[Res] -> Res;
+		[] -> []
+	end.
 findOne(Col, [_|_] = Query, [_|_] = Selector) ->
-	find(Col, Query, Selector, 0, 1).
+	case find(Col, Query, Selector, 0, 1) of
+		[Res] -> Res;
+		[] -> []
+	end.
 
 find(Col, #search{} = Q) ->
 	find(Col, Q#search.criteria, Q#search.field_selector, Q#search.nskip, Q#search.ndocs).
@@ -303,6 +317,7 @@ cloneDatabase(From) when is_list(From); is_binary(From) ->
 dropCollection(C) when is_tuple(C) ->
 	dropCollection(atom_to_binary(element(1,C),latin1));
 dropCollection(Collection) ->
+	mongodb:clearIndexCache(),
 	runCmd([{"drop", Collection}]).
 
 createCollection(Name) ->
@@ -336,5 +351,112 @@ setProfilingLevel(L) when is_integer(L) ->
 	runCmd([{"profile", L}]).
 getProfilingLevel() ->
 	runCmd([{"profile", -1}]).
+
+
+gfsNew(Filename) ->
+	gfsNew(<<"fd">>, Filename, []).
+gfsNew(Filename, Opts) ->
+	gfsNew(<<"fd">>, Filename, Opts).
+gfsNew([_|_] = Collection, Filename, Opts) ->
+	gfsNew(list_to_binary(Collection), Filename, Opts);
+gfsNew(<<_/binary>> = Collection, Filename, Opts) ->
+	mongodb:startgfs(gfsopts(Opts,#gfs_state{file = #gfs_file{filename = Filename, length = 0, chunkSize = 262144,
+															  docid = mongodb:create_id(), uploadDate = now()},
+	 										 collection = name(Collection), db = DB, mode = write})).
+	% Name = name(<<Collection/binary, ".file">>).
+	
+gfsopts([{meta, Rec}|T], S) ->
+	gfsopts(T, S#gfs_state{file = (S#gfs_state.file)#gfs_file{metadata = Rec}});
+gfsopts([{aliases, L}|T], S) ->
+	gfsopts(T, S#gfs_state{file = (S#gfs_state.file)#gfs_file{aliases = {array, L}}});
+gfsopts([{mime, Mime}|T], S) ->
+	gfsopts(T, S#gfs_state{file = (S#gfs_state.file)#gfs_file{contentType = Mime}});
+gfsopts([{chunkSize, Size}|T], S) ->
+	gfsopts(T, S#gfs_state{file = (S#gfs_state.file)#gfs_file{chunkSize = Size}});
+gfsopts([{flushLimit, Limit}|T], S) ->
+	gfsopts(T, S#gfs_state{flush_limit = Limit});
+gfsopts([_|T], S) ->
+	gfsopts(T,S);
+gfsopts([], S) ->
+	S.
+	
+gfsWrite(PID, Bin) ->
+	PID ! {write, Bin},
+	ok.
+gfsFlush(PID) ->
+	PID ! {flush},
+	ok.
+gfsClose(PID) ->
+	unlink(PID),
+	PID ! {close},
+	ok.
+
+gfsOpen(R) ->
+	gfsOpen(<<"fd">>, R).
+gfsOpen([_|_] = Col, R) ->
+	gfsOpen(list_to_binary(Col),R);
+gfsOpen(Collection, R) ->
+	case R#gfs_file.docid of
+		undefined ->			
+			Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode_findrec(R)},
+			case mongodb:exec_find(name(<<Collection/binary, ".files">>), Quer) of
+				not_connected ->
+					not_connected;
+				<<>> ->
+					[];
+				Result ->
+					[DR] = mongodb:decoderec(R, Result),
+					gfsOpen(DR)
+			end;
+		_ ->
+			% R
+			mongodb:startgfs(#gfs_state{file = R, collection = name(Collection), db = DB, mode = read})
+	end.
+
+gfsRead(PID, N)	->
+	PID ! {read, self(), N},
+	receive
+		{gfs_bytes, Bin} ->
+			Bin
+		after 5000 ->
+			false
+	end.
+
+gfsDelete(R) ->
+	gfsDelete(<<"fd">>, R).
+gfsDelete([_|_] = Col, R) ->
+	gfsDelete(list_to_binary(Col),R);
+gfsDelete(Collection, R) ->
+	case R#gfs_file.docid of
+		undefined ->			
+			Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode_findrec(R)},
+			case mongodb:exec_find(name(<<Collection/binary, ".files">>), Quer) of
+				not_connected ->
+					not_connected;
+				<<>> ->
+					[];
+				Result ->
+					[DR] = mongodb:decoderec(R, Result),
+					gfsDelete(DR)
+			end;
+		_ ->
+			% NChunks = (R#gfs_file.length div R#gfs_file.chunkSize) + 1,
+			remove(<<Collection/binary, ".files">>, [{<<"_id">>, {oid, R#gfs_file.docid}}]),
+			remove(<<Collection/binary, ".chunks">>, [{<<"files_id">>, {oid, R#gfs_file.docid}}])
+	end.
+			
+			
+testw(Mong, Filename) ->
+	spawn(fun() ->
+			% If the calling process does gfsNew, gfsWrite and dies immediately after, 
+			%  gfsClose is necesssary. This is because of a race condition.
+			%  Both calls will complete before gfs gets the chance to set trap_exit to true and detect
+			%  the caller has died.
+			{ok,Bin} = file:read_file(Filename),
+			PID = Mong:gfsNew(Filename),
+			Mong:gfsWrite(PID,Bin),
+			Mong:gfsClose(PID)
+		  end).
+	
 	
 	
