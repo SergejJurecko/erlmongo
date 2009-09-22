@@ -1,6 +1,6 @@
 = Info
 
-Erlmongo is a pretty complete Erlang driver for mongodb. Gridfs stuff is not supported yet, but it will be done eventually.  
+Erlmongo is a pretty complete Erlang driver for mongodb. 
 
 It supports records and proplists as datatypes. Strings can be lists or binaries, but strings received from mongodb (as a result of find) will be binaries.
 The only built in limitation is in regards to record field names. They need to start with [a-z] (because of records) and be in latin1 (performance reason). Record values can of course be anything. It's a stupid idea to use non ascii characters as field names anyway.
