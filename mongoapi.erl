@@ -288,9 +288,7 @@ addUser(U, P) when is_binary(P) ->
 addUser(Username, Password) ->
 	save(<<"system.users">>, [{<<"user">>, Username},
 							  {<<"pwd">>, bin_to_hexstr(erlang:md5(Username ++ ":mongo:" ++ Password))}]).
-	
-bin_to_hexstr(Bin) ->
-	lists:flatten([io_lib:format("~2.16.0B", [X]) || X <- binary_to_list(Bin)]).
+
 	
 % Runs $cmd. Parameters can be just a string it will be converted into {string,1}
 runCmd({_,_} = T) ->

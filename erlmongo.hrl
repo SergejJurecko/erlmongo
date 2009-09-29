@@ -52,11 +52,11 @@ loop_fields(Tuple, [], _, _, _) ->
 -define(QUER_OPT_SLAVEOK, 4).
 -define(QUER_OPT_NOTIMEOUT, 16).
 
-% By = either a record or proplist with parameters you are searching by
+% criteria = either a record or proplist with parameters you are searching by
 % field_selector = list of fields you wish to return
 % ndocs = how many documents you wish to return, 0 = default
 % nskip = how many documents to skip
-% Don't touch it.
+% opts - Don't touch it.
 -record(search, {ndocs = 0, nskip = 0, criteria = <<>>, field_selector = <<>>, opts = ?QUER_OPT_NONE}).
 -record(cursor, {id, pid, limit = 0}).
 -record(update, {upsert = 1, selector = <<>>, document = <<>>}).

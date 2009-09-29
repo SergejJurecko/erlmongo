@@ -6,10 +6,9 @@
          decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0, create_id/0, startgfs/1,
          singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2]).
 -include_lib("erlmongo.hrl").
-% -define(RIN, record_info(fields, enctask)).
-
-
 % -compile(export_all).
+
+
 -define(MONGO_PORT, 27017).
 -define(RECONNECT_DELAY, 1000).
 
@@ -48,18 +47,21 @@ stop() ->
 print_info() ->
 	gen_server:cast(?MODULE, {print_info}).
 
-% SPEED TEST
-% loop(N) ->
-% 	io:format("~p~n", [now()]),
-% 	t(N, true),
-% 	io:format("~p~n", [now()]).
-
+% % SPEED TEST
+% loop(N, B) ->
+% 	Start = now(),
+% 	io:format("~p~n", [Start]),
+% 	t(N, B),
+% 	Stop = now(),
+% 	io:format("~p, ~p~n", [Stop, timer:now_diff(Stop,Start)]).
+% 
 % t(0, _) ->
 % 	true;
 % t(N, R) ->
-% 	% encoderec(#mydoc{name = <<"IZ_RECORDA">>, i = 12}),
-% 	% decoderec(#mydoc{}, R),
-% 	ensureIndex(#mydoc{}, [{#mydoc.name, -1},{#mydoc.i, 1}]),
+% 	% encoderec(#mydoc{name = <<"IZ_RECORDA">>, address = #address{city = <<"ny">>, country = <<"USA">>}, i = 12, tags = {array, [<<"abc">>, <<"def">>]}}),
+% 	decoderec(#mydoc{}, R),
+% 	% ensureIndex(#mydoc{}, [{#mydoc.name, -1},{#mydoc.i, 1}]),
+% 	% decode(R),
 % 	t(N-1, R).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -653,7 +655,7 @@ constr_killcursors(U) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 %						BSON encoding/decoding 
-%	most of it taken and modified from the mongo-erlang-driver project by Elias Torres
+%	basic BSON encoding/decoding taken and modified from the mongo-erlang-driver project by Elias Torres
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -978,19 +980,26 @@ encode_cstring(String) ->
     <<(unicode:characters_to_binary(String))/binary, 0:8>>.
 	
 %% Size has to be greater than 4
-decode(<<Size:32/little-signed, Rest/binary>> = Binary) when byte_size(Binary) >= Size, Size > 4 ->
-	decode(Rest, Size-4);
-
-decode(_BadLength) ->
-	throw({invalid_length}).
-
-decode(Binary, _Size) ->
-  	case decode_next(Binary, []) of
-    	{BSON, <<>>} ->
-      		[BSON];
-    	{BSON, Rest} ->
-			[BSON | decode(Rest)]
-  	end.
+% decode(<<Size:32/little-signed, Rest/binary>> = Binary) when byte_size(Binary) >= Size, Size > 4 ->
+% 	decode(Rest, Size-4);
+% 
+% decode(_BadLength) ->
+% 	throw({invalid_length}).
+% 
+% decode(Binary, _Size) ->
+%   	case decode_next(Binary, []) of
+%     	{BSON, <<>>} ->
+%       		[BSON];
+%     	{BSON, Rest} ->
+% 			[BSON | decode(Rest)]
+%   	end.
+decode(Bin) ->
+	decode(Bin,[]).
+decode(<<_Size:32, Bin/binary>>, L) ->
+  	{BSON, Rem} = decode_next(Bin, []),
+	decode(Rem,[BSON|L]);
+decode(<<>>, L) ->
+	lists:reverse(L).
 
 decode_next(<<>>, Accum) ->
   	{lists:reverse(Accum), <<>>};
@@ -1009,55 +1018,55 @@ decode_cstring(<<0:8, Rest/binary>>, Acc) ->
 decode_cstring(<<C:8, Rest/binary>>, Acc) ->
 	decode_cstring(Rest, <<Acc/binary, C:8>>).
 
-decode_value(_Type = 1, <<Double:64/little-signed-float, Rest/binary>>) ->
+decode_value(7, <<OID:12/binary,Rest/binary>>) ->
+  	{{oid, dec2hex(<<>>, OID)}, Rest};
+decode_value(16, <<Integer:32/little-signed, Rest/binary>>) ->
+	{Integer, Rest};
+decode_value(18, <<Integer:64/little-signed, Rest/binary>>) ->
+	{Integer, Rest};
+decode_value(1, <<Double:64/little-signed-float, Rest/binary>>) ->
 	{Double, Rest};
-decode_value(_Type = 2, <<Size:32/little-signed, Rest/binary>>) ->
+decode_value(2, <<Size:32/little-signed, Rest/binary>>) ->
 	StringSize = Size-1,
 	<<String:StringSize/binary, 0:8, Remain/binary>> = Rest,
 	{String, Remain};
-decode_value(_Type = 3, <<Size:32/little-signed, Rest/binary>> = Binary) when byte_size(Binary) >= Size ->
+decode_value(3, <<Size:32/little-signed, Rest/binary>> = Binary) when byte_size(Binary) >= Size ->
   	decode_next(Rest, []);
-decode_value(_Type = 4, <<Size:32/little-signed, Data/binary>> = Binary) when byte_size(Binary) >= Size ->
+decode_value(4, <<Size:32/little-signed, Data/binary>> = Binary) when byte_size(Binary) >= Size ->
   	{Array, Rest} = decode_next(Data, []),
   	{{array,[Value || {_Key, Value} <- Array]}, Rest};
-decode_value(_Type = 5, <<_Size:32/little-signed, 2:8/little, BinSize:32/little-signed, BinData:BinSize/binary-little-unit:8, Rest/binary>>) ->
+decode_value(5, <<_Size:32/little-signed, 2:8/little, BinSize:32/little-signed, BinData:BinSize/binary-little-unit:8, Rest/binary>>) ->
   	{{binary, 2, BinData}, Rest};
-decode_value(_Type = 5, <<Size:32/little-signed, SubType:8/little, BinData:Size/binary-little-unit:8, Rest/binary>>) ->
+decode_value(5, <<Size:32/little-signed, SubType:8/little, BinData:Size/binary-little-unit:8, Rest/binary>>) ->
   	{{binary, SubType, BinData}, Rest};
-decode_value(_Type = 6, _Binary) ->
+decode_value(6, _Binary) ->
   	throw(encountered_undefined);
-decode_value(_Type = 7, <<OID:12/binary,Rest/binary>>) ->
-  	{{oid, dec2hex(<<>>, OID)}, Rest};
-decode_value(_Type = 8, <<0:8, Rest/binary>>) ->
+decode_value(8, <<0:8, Rest/binary>>) ->
 	{false, Rest};
-decode_value(_Type = 8, <<1:8, Rest/binary>>) ->
+decode_value(8, <<1:8, Rest/binary>>) ->
   	{true, Rest};
-decode_value(_Type = 9, <<Millis:64/little-signed, Rest/binary>>) ->
+decode_value(9, <<Millis:64/little-signed, Rest/binary>>) ->
 	UnixTime = Millis div 1000,
   	MegaSecs = UnixTime div 1000000,
   	Secs = UnixTime - (MegaSecs * 1000000),
   	MicroSecs = (Millis - (UnixTime * 1000)) * 1000,
   	{{MegaSecs, Secs, MicroSecs}, Rest};
-decode_value(_Type = 10, Binary) ->
+decode_value(10, Binary) ->
   	{null, Binary};
-decode_value(_Type = 11, Binary) ->
+decode_value(11, Binary) ->
   	{Expression, RestWithFlags} = decode_cstring(Binary, <<>>),
   	{Flags, Rest} = decode_cstring(RestWithFlags, <<>>),
   	{{regex, Expression, Flags}, Rest};
-decode_value(_Type = 12, <<Size:32/little-signed, Data/binary>> = Binary) when size(Binary) >= Size ->
+decode_value(12, <<Size:32/little-signed, Data/binary>> = Binary) when size(Binary) >= Size ->
 	{NS, RestWithOID} = decode_cstring(Data, <<>>),
 	{{oid, OID}, Rest} = decode_value(7, RestWithOID),
 	{{ref, NS, OID}, Rest};
-decode_value(_Type = 13, <<_Size:32/little-signed, Data/binary>>) ->
+decode_value(13, <<_Size:32/little-signed, Data/binary>>) ->
 	{Code, Rest} = decode_cstring(Data, <<>>),
 	{{code, Code}, Rest};
-decode_value(_Type = 14, _Binary) ->
+decode_value(14, _Binary) ->
 	throw(encountered_ommitted);
-decode_value(_Type = 15, _Binary) ->
+decode_value(15, _Binary) ->
 	throw(encountered_ommitted);
-decode_value(_Type = 16, <<Integer:32/little-signed, Rest/binary>>) ->
-	{Integer, Rest};
-decode_value(_Type = 18, <<Integer:64/little-signed, Rest/binary>>) ->
-	{Integer, Rest};
 decode_value(_Type = 18, <<Integer:32/little-signed, Rest/binary>>) ->
 	{Integer, Rest}.
