@@ -4,7 +4,7 @@
 -export([connect/0, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
          encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, rec/0,
          decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0, create_id/0, startgfs/1,
-         singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2]).
+         singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2, dec2hex/2, hex2dec/2]).
 -include_lib("erlmongo.hrl").
 % -compile(export_all).
 
@@ -1068,5 +1068,5 @@ decode_value(14, _Binary) ->
 	throw(encountered_ommitted);
 decode_value(15, _Binary) ->
 	throw(encountered_ommitted);
-decode_value(_Type = 18, <<Integer:32/little-signed, Rest/binary>>) ->
+decode_value(18, <<Integer:32/little-signed, Rest/binary>>) ->
 	{Integer, Rest}.

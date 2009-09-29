@@ -103,28 +103,38 @@ batchInsert(LRecs) ->
 findOne(Col, []) ->
 	case find(Col, [], undefined, 0, 1) of
 		[Res] -> Res;
-		[] -> []
+		[] -> [];
+		R ->
+			R
 	end;
 findOne(Col, [_|_] = Query) when is_tuple(Col) == false ->
 	case find(Col, Query, undefined, 0, 1) of
 		[Res] -> Res;
-		[] -> []
+		[] -> [];
+		R ->
+			R
 	end;
 findOne(Query, Selector) when is_tuple(Query) ->
 	case find(Query, Selector, 0, 1) of
 		[Res] -> Res;
-		[] -> []
+		[] -> [];
+		R ->
+			R
 	end.
 	
 findOne(Query) when is_tuple(Query) ->
 	case find(Query, undefined, 0, 1) of
 		[Res] -> Res;
-		[] -> []
+		[] -> [];
+		R ->
+			R
 	end.
 findOne(Col, [_|_] = Query, [_|_] = Selector) ->
 	case find(Col, Query, Selector, 0, 1) of
 		[Res] -> Res;
-		[] -> []
+		[] -> [];
+		R ->
+			R
 	end.
 
 find(Col, #search{} = Q) ->
@@ -287,7 +297,7 @@ addUser(U, P) when is_binary(P) ->
 	addUser(U,binary_to_list(P));
 addUser(Username, Password) ->
 	save(<<"system.users">>, [{<<"user">>, Username},
-							  {<<"pwd">>, bin_to_hexstr(erlang:md5(Username ++ ":mongo:" ++ Password))}]).
+							  {<<"pwd">>, mongodb:dec2hex(<<>>, erlang:md5(Username ++ ":mongo:" ++ Password))}]).
 
 	
 % Runs $cmd. Parameters can be just a string it will be converted into {string,1}
