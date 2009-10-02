@@ -1,7 +1,7 @@
 -module(mongodb).
 -export([deser_prop/1,reload/0, print_info/0, start/0, stop/0, init/1, handle_call/3, 
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([connect/0, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
+-export([connect/0, connect/1, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
          encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, rec/0,
          decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0, create_id/0, startgfs/1,
          singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2, dec2hex/2, hex2dec/2]).
@@ -70,7 +70,13 @@ print_info() ->
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 connect() ->
-	gen_server:cast(?MODULE, {start_connection}).
+	gen_server:cast(?MODULE, {start_connection, undefined}).
+% For when connection is established. Parameter can be:
+% - {Module,Function,Params}
+% - PID, that gets a {mongodb_connected} message
+connect(Callback) when is_pid(Callback); is_tuple(Callback), tuple_size(Callback) == 3 ->
+	gen_server:cast(?MODULE, {start_connection, Callback}).
+	
 singleServer() ->
 	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
 singleServer(Addr) ->
@@ -216,7 +222,7 @@ startgfs(P) ->
 %   masterMaster: read = master1, write = master2
 % timer is reconnect timer if some connection is missing
 % indexes is ensureIndex cache (an ets table).
--record(mngd, {read, write, conninfo, indexes, timer, hashed_hostn, oid_index = 1}).
+-record(mngd, {read, write, conninfo, indexes, timer, hashed_hostn, oid_index = 1, conn_established_cb}).
 -define(R2P(Record), rec2prop(Record, record_info(fields, mngd))).
 -define(P2R(Prop), prop2rec(Prop, mngd, #mngd{}, record_info(fields, mngd))).	
 	
@@ -261,6 +267,8 @@ handle_cast({clear_indexcache}, P) ->
 	{noreply, P};
 handle_cast({conninfo, Conn}, P) ->
 	{noreply, P#mngd{conninfo = Conn}};
+handle_cast({start_connection, SendBack}, P) ->
+	handle_cast({start_connection}, P#mngd{conn_established_cb = SendBack});
 handle_cast({start_connection}, #mngd{conninfo = {masterMaster, {A1,P1},{A2,P2}}} = P)  ->
 	case true of
 		_ when P#mngd.read /= P#mngd.write, P#mngd.read /= undefined, P#mngd.write /= undefined ->
@@ -318,7 +326,21 @@ timer(undefined) ->
 timer(T) ->
 	T.
 
+conn_callback(P) ->
+	case is_pid(P) of
+		true ->
+			P ! {mongodb_connected};
+		false ->
+			case P of
+				{Mod,Fun,Param} ->
+					erlang:apply(Mod,Fun,Param);
+				_ ->
+					true
+			end
+	end.
+
 handle_info({conn_established, read, ConnProc}, P) ->
+	conn_callback(P#mngd.conn_established_cb),
 	{noreply, P#mngd{read = ConnProc}};
 handle_info({conn_established, write, ConnProc}, P) ->
 	{noreply, P#mngd{write = ConnProc}};
@@ -358,6 +380,7 @@ handle_info({query_result, Src, <<_:32/binary, Res/binary>>}, P) ->
 	try mongodb:decode(Res) of
 		[[{<<"ismaster">>, 1}|_]] when element(1,P#mngd.conninfo) == replicaPairs, P#mngd.read == undefined ->
 			link(Src),
+			conn_callback(P#mngd.conn_established_cb),
 			{noreply, P#mngd{read = Src, write = Src}};
 		_X ->
 			% io:format("~p~n", [_X]),
@@ -945,10 +968,10 @@ encode_element({Name, {exists, Val}}) ->
 encode_element({Name, {binary, SubType, Data}}) ->
   	StringEncoded = encode_cstring(Name),
   	<<5, StringEncoded/binary, (byte_size(Data)):32/little-signed, SubType:8, Data/binary>>;
-encode_element({Name, Value}) when is_integer(Value) ->
-	<<18, Name/binary, 0, Value:64/little-signed>>;
 encode_element({Name, Value}) when is_float(Value) ->
 	<<1, (Name)/binary, 0, Value:64/little-signed-float>>;
+encode_element({Name, Value}) when is_integer(Value) ->
+	<<18, Name/binary, 0, Value:64/little-signed>>;
 encode_element({Name, {obj, []}}) ->
 	<<3, Name/binary, 0, (encode([]))/binary>>;	
 encode_element({Name, {MegaSecs, Secs, MicroSecs}}) when  is_integer(MegaSecs),is_integer(Secs),is_integer(MicroSecs) ->
