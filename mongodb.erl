@@ -870,6 +870,8 @@ dec2hex(N, <<I:8,Rem/binary>>) ->
 dec2hex(N,<<>>) ->
 	N.
 
+hex2dec(N,{oid, Bin}) ->
+	hex2dec(N, Bin);
 hex2dec(N,<<A:8,B:8,Rem/binary>>) ->
 	hex2dec(<<N/binary, ((dec0(A) bsl 4) + dec0(B)):8>>, Rem);
 hex2dec(N,<<>>) ->
