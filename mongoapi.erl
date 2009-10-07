@@ -39,7 +39,7 @@ save(Rec) ->
 	case element(3, Rec) of
 		undefined ->
 			OID = mongodb:create_id(),
-			case mongodb:exec_insert(name(element(1,Rec)), #insert{documents = mongodb:encoderec(setelement(3, Rec, {oid, OID}))}) of
+			case mongodb:exec_insert(name(element(1,Rec)), #insert{documents = mongodb:encoderec(setelement(3, Rec, OID))}) of
 				ok ->
 					OID;
 				R ->
