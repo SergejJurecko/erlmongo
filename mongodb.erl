@@ -853,12 +853,13 @@ rec_field_list(RecVals, N, [Field|Fields], <<Type:8, Bin/binary>>) ->
 					rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain);
 				_ ->
 					{Value, Remain} = decode_value(Type, ValRem),
-					case Value of
-						{oid, V} ->
-							rec_field_list([{N, V}|RecVals], N+1, Fields, Remain);
-						_ ->
-							rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain)
-					end
+					rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain)
+					% case Value of
+					% 	{oid, V} ->
+					% 		rec_field_list([{N, V}|RecVals], N+1, Fields, Remain);
+					% 	_ ->
+					% 		rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain)
+					% end
 			end;
 		_ ->
 			rec_field_list(RecVals, N+1, Fields, <<Type:8, Bin/binary>>)
