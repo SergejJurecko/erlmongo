@@ -914,6 +914,10 @@ encode_element({Name, [_|_] = Value}) ->
 encode_element({Name, <<_/binary>> = Value}) ->
 	ValueEncoded = encode_cstring(Value),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
+encode_element({Name, Value}) when Value bsr 32 > 0 ->
+	<<18, Name/binary, 0, Value:64/little-signed>>;
+encode_element({Name, Value}) when Value bsr 32 == 0 ->
+	<<16, Name/binary, 0, Value:32/little-signed>>;
 encode_element({plaintext, Name, Val}) -> % exists for performance reasons.
 	<<2, Name/binary, 0, (byte_size(Val)+1):32/little-signed, Val/binary, 0>>;
 encode_element({Name, true}) ->
@@ -973,8 +977,6 @@ encode_element({Name, {binary, SubType, Data}}) ->
   	<<5, StringEncoded/binary, (byte_size(Data)):32/little-signed, SubType:8, Data/binary>>;
 encode_element({Name, Value}) when is_float(Value) ->
 	<<1, (Name)/binary, 0, Value:64/little-signed-float>>;
-encode_element({Name, Value}) when is_integer(Value) ->
-	<<18, Name/binary, 0, Value:64/little-signed>>;
 encode_element({Name, {obj, []}}) ->
 	<<3, Name/binary, 0, (encode([]))/binary>>;	
 encode_element({Name, {MegaSecs, Secs, MicroSecs}}) when  is_integer(MegaSecs),is_integer(Secs),is_integer(MicroSecs) ->
