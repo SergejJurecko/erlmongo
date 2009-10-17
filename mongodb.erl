@@ -914,7 +914,7 @@ encode_element({Name, [_|_] = Value}) ->
 encode_element({Name, <<_/binary>> = Value}) ->
 	ValueEncoded = encode_cstring(Value),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
-encode_element({Name, Value}) when Value bsr 32 > 0 ->
+encode_element({Name, Value}) when Value bsr 32 /= 0 ->
 	<<18, Name/binary, 0, Value:64/little-signed>>;
 encode_element({Name, Value}) when Value bsr 32 == 0 ->
 	<<16, Name/binary, 0, Value:32/little-signed>>;
