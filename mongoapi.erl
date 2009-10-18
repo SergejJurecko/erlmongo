@@ -30,7 +30,12 @@ save(Collection, [_|_] = L) ->
 		{value, {_, OID}} ->
 			case mongodb:exec_update(name(Collection), #update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encode(L)}) of
 				ok ->
-					{oid, OID};
+					case OID of
+						{oid, _} ->
+							{oid, OID};
+						_ ->
+							OID
+					end;
 				R ->
 					R
 			end
@@ -49,7 +54,12 @@ save(Collection, Rec) ->
 			case mongodb:exec_update(name(Collection), 
 								#update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encoderec(Rec)}) of
 				ok ->
-					{oid, OID};
+					case OID of
+						{oid, _} ->
+							{oid, OID};
+						_ ->
+							OID
+					end;
 				R ->
 					R
 			end

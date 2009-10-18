@@ -712,7 +712,12 @@ encoderec(NameRec, Type, Rec, [FieldName|T], N, Bin) ->
 		Val ->
 			case FieldName of
 				docid ->
-					encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({<<"_id">>, {oid, Val}}))/binary>>);
+					case Val of
+						{oid, _} ->
+							encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({<<"_id">>, {oid, Val}}))/binary>>);
+						_ ->
+							encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({<<"_id">>, Val}))/binary>>)
+					end;
 				_ ->
 					case NameRec of
 						<<>> ->
