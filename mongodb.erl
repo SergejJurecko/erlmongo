@@ -1,7 +1,7 @@
 -module(mongodb).
 -export([deser_prop/1,reload/0, print_info/0, start/0, stop/0, init/1, handle_call/3, 
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([connect/0, connect/1, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
+-export([connect/0, connect/1, is_connected/0, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
          encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, rec/0,
          decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0, create_id/0, startgfs/1,
          singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2, dec2hex/2, hex2dec/2]).
@@ -71,6 +71,13 @@ print_info() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 connect() ->
 	gen_server:cast(?MODULE, {start_connection, undefined}).
+is_connected() ->
+	case gen_server:call(?MODULE, {getread}) of
+		undefined ->
+			false;
+		_ ->
+			true
+	end.
 % For when connection is established. Parameter can be:
 % - {Module,Function,Params}
 % - PID, that gets a {mongodb_connected} message
