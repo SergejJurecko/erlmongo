@@ -71,18 +71,19 @@ print_info() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 connect() ->
 	gen_server:cast(?MODULE, {start_connection, undefined}).
+% For when connection is established. Parameter can be:
+% - {Module,Function,Params}
+% - PID, that gets a {mongodb_connected} message
+connect(Callback) when is_pid(Callback); is_tuple(Callback), tuple_size(Callback) == 3 ->
+	gen_server:cast(?MODULE, {start_connection, Callback}).
+
 is_connected() ->
 	case gen_server:call(?MODULE, {getread}) of
 		undefined ->
 			false;
 		_ ->
 			true
-	end.
-% For when connection is established. Parameter can be:
-% - {Module,Function,Params}
-% - PID, that gets a {mongodb_connected} message
-connect(Callback) when is_pid(Callback); is_tuple(Callback), tuple_size(Callback) == 3 ->
-	gen_server:cast(?MODULE, {start_connection, Callback}).
+	end.	
 	
 singleServer() ->
 	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
@@ -754,7 +755,7 @@ encoderec_selector(Rec, SelectorList) ->
 encoderec_selector([{FieldIndex, Val}|Fields], [FieldName|FieldNames], FieldIndex, Bin) ->
 	case FieldName of
 		docid ->
-			encoderec_selector(Fields, FieldNames, FieldIndex+1, <<Bin/binary, (encode_element({<<"_id">>, {oid, Val}}))/binary>>);
+			encoderec_selector(Fields, FieldNames, FieldIndex+1, <<Bin/binary, (encode_element({<<"_id">>, Val}))/binary>>);
 		{Name, _RecIndex} ->
 			encoderec_selector(Fields, FieldNames, FieldIndex+1, <<Bin/binary, (encode_element({atom_to_binary(Name,latin1), Val}))/binary>>);
 		_ ->
