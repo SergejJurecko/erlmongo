@@ -88,21 +88,21 @@ is_connected() ->
 singleServer() ->
 	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
 singleServer(Addr) ->
-	[Addr,Port] = string:tokens(Addr,":"),
+	[IP,Port] = string:tokens(Addr,":"),
 	% gen_server:cast(?MODULE, {conninfo, {single, {Addr,Port}}}).
-	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {Addr,Port}, {Addr,Port}}}).
+	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {IP,Port}, {IP,Port}}}).
 masterSlave(Addr1, Addr2) ->
-	[Addr1,Port1] = string:tokens(Addr1,":"),
-	[Addr2,Port2] = string:tokens(Addr2,":"),
-	gen_server:cast(?MODULE, {conninfo, {masterSlave, {Addr1,Port1}, {Addr2,Port2}}}).
+	[IP1,Port1] = string:tokens(Addr1,":"),
+	[IP2,Port2] = string:tokens(Addr2,":"),
+	gen_server:cast(?MODULE, {conninfo, {masterSlave, {IP1,Port1}, {IP2,Port2}}}).
 masterMaster(Addr1,Addr2) ->
-	[Addr1,Port1] = string:tokens(Addr1,":"),
-	[Addr2,Port2] = string:tokens(Addr2,":"),
-	gen_server:cast(?MODULE, {conninfo, {masterMaster, {Addr1,Port1}, {Addr2,Port2}}}).
+	[IP1,Port1] = string:tokens(Addr1,":"),
+	[IP2,Port2] = string:tokens(Addr2,":"),
+	gen_server:cast(?MODULE, {conninfo, {masterMaster, {IP1,Port1}, {IP2,Port2}}}).
 replicaPairs(Addr1,Addr2) ->
-	[Addr1,Port1] = string:tokens(Addr1,":"),
-	[Addr2,Port2] = string:tokens(Addr2,":"),
-	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {Addr1,Port1}, {Addr2,Port2}}}).
+	[IP1,Port1] = string:tokens(Addr1,":"),
+	[IP2,Port2] = string:tokens(Addr2,":"),
+	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {IP1,Port1}, {IP2,Port2}}}).
 	
 ensureIndex(DB,Bin) ->
 	gen_server:cast(?MODULE, {ensure_index, DB, Bin}).
@@ -255,7 +255,9 @@ handle_call(_, _, P) ->
 deser_prop(P) ->
 	?P2R(P).
 
-startcon(undefined, Type, Addr,Port) ->
+startcon(undefined, Type, Addr, Port) when is_list(Port) ->
+	startcon(undefined, Type, Addr, list_to_integer(Port));
+startcon(undefined, Type, Addr, Port) ->
 	PID = spawn_link(fun() -> connection(true) end),
 	PID ! {start, self(), Type, Addr, Port};
 startcon(PID, _, _, _) ->
@@ -355,9 +357,8 @@ handle_info({conn_established, write, ConnProc}, P) ->
 handle_info({reconnect}, P) ->
 	handle_cast({start_connection}, P);
 handle_info({'EXIT', PID, _Reason}, #mngd{conninfo = {replicaPairs, _, _}} = P) ->
-	% io:format("~p~n", [_Reason]),
 	case true of
-		_ when P#mngd.read == PID ->
+		_ when P#mngd.read == PID; P#mngd.read == undefined ->
 			{noreply, P#mngd{read = undefined, write = undefined, timer = timer(P#mngd.timer)}};
 		_ ->
 			{noreply, P}
