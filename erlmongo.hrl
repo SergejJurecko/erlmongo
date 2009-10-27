@@ -13,7 +13,7 @@
 -define(RECTABLE, {[recindex,docid,name,i, {address, 2}, tags],
                    record_info(fields, address),
 				   % If you wish to use metadata embedded record.
-				   % recindex, docid, filename, contentType, length, chunkSize, uploadDate, aliases, {metadata, INDEX_HERE}, md5
+				   % [recindex, docid, filename, contentType, length, chunkSize, uploadDate, aliases, {metadata, INDEX_HERE}, md5]
 				   record_info(fields, gfs_file),
 				   record_info(fields, gfs_chunk)}).
 
