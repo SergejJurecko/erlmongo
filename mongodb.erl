@@ -1070,8 +1070,12 @@ decode_value(1, <<Double:64/little-signed-float, Rest/binary>>) ->
 	{Double, Rest};
 decode_value(2, <<Size:32/little-signed, Rest/binary>>) ->
 	StringSize = Size-1,
-	<<String:StringSize/binary, 0:8, Remain/binary>> = Rest,
-	{String, Remain};
+	case Rest of
+		<<String:StringSize/binary, 0:8, Remain/binary>> ->
+			{String, Remain};
+		<<String:Size/binary, Remain/binary>> ->
+			{String,Remain}
+	end;
 decode_value(3, <<Size:32/little-signed, Rest/binary>> = Binary) when byte_size(Binary) >= Size ->
   	decode_next(Rest, []);
 decode_value(4, <<Size:32/little-signed, Data/binary>> = Binary) when byte_size(Binary) >= Size ->
