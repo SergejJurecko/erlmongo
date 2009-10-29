@@ -3,7 +3,7 @@
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([connect/0, connect/1, is_connected/0, exec_cursor/2, exec_delete/2, exec_cmd/2, exec_insert/2, exec_find/2, exec_update/2, exec_getmore/2,  
          encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, rec/0,
-         decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0, create_id/0, startgfs/1,
+         decoderec/2, encode/1, decode/1, ensureIndex/2, clearIndexCache/0, create_id/0, startgfs/1, datetime_to_now/1,
          singleServer/1, singleServer/0, masterSlave/2,masterMaster/2, replicaPairs/2, dec2hex/2, hex2dec/2]).
 -include_lib("erlmongo.hrl").
 % -compile(export_all).
@@ -103,6 +103,10 @@ replicaPairs(Addr1,Addr2) ->
 	[IP1,Port1] = string:tokens(Addr1,":"),
 	[IP2,Port2] = string:tokens(Addr2,":"),
 	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {IP1,Port1}, {IP2,Port2}}}).
+	
+datetime_to_now(Loctime) ->	
+	Secs = calendar:datetime_to_gregorian_seconds(Loctime) - 719528 * 24 * 60 * 60 - 3600,
+	{Secs div 1000000, Secs rem 1000000,0}.
 	
 ensureIndex(DB,Bin) ->
 	gen_server:cast(?MODULE, {ensure_index, DB, Bin}).

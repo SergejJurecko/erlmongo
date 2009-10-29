@@ -17,8 +17,9 @@ For instance:
 I haven't used erlmongo in production yet, so all the bugs might not be ironed out and there are a few inconsistencies with the api (I'll fix them in the near future).
 
 = Examples
+  make
+  erl
   rr("erlmongo.hrl").
-  % Compile the .erl files first
   application:start(erlmongo).
   % Set mongodb server info. singleServer() is the same as singleServer("localhost:27017")
   mongodb:singleServer().
