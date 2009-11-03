@@ -926,6 +926,8 @@ encode_element({[_|_] = Name, Val}) ->
 encode_element({Name, [{_,_}|_] = Items}) ->
 	Binary = encode(Items),
 	<<3, Name/binary, 0, Binary/binary>>;
+encode_element({Name, [] = Value}) ->
+	<<2, Name/binary, 0, 0:32/little-signed>>;
 encode_element({Name, [_|_] = Value}) ->
 	ValueEncoded = encode_cstring(Value),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
