@@ -91,9 +91,9 @@ singleServer(Addr) ->
 	[IP,Port] = string:tokens(Addr,":"),
 	% gen_server:cast(?MODULE, {conninfo, {single, {Addr,Port}}}).
 	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {IP,Port}, {IP,Port}}}).
-masterSlave(Addr1, Addr2) ->
-	[IP1,Port1] = string:tokens(Addr1,":"),
-	[IP2,Port2] = string:tokens(Addr2,":"),
+masterSlave(MasterAddr, SlaveAddr) ->
+	[IP1,Port1] = string:tokens(MasterAddr,":"),
+	[IP2,Port2] = string:tokens(SlaveAddr,":"),
 	gen_server:cast(?MODULE, {conninfo, {masterSlave, {IP1,Port1}, {IP2,Port2}}}).
 masterMaster(Addr1,Addr2) ->
 	[IP1,Port1] = string:tokens(Addr1,":"),
@@ -1004,7 +1004,7 @@ encode_element({Name, {MegaSecs, Secs, MicroSecs}}) when  is_integer(MegaSecs),i
   Millis = Unix * 1000 + (MicroSecs div 1000),
   <<9, Name/binary, 0, Millis:64/little-signed>>;
 encode_element({Name, null}) ->
-  <<10, Name/binary>>;
+  <<10, Name/binary, 0>>;
 encode_element({Name, {regex, Expression, Flags}}) ->
   ExpressionEncoded = encode_cstring(Expression),
   FlagsEncoded = encode_cstring(Flags),
