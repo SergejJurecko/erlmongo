@@ -283,17 +283,36 @@ deleteIndex(Rec, Key) ->
 	mongodb:exec_cmd(DB,[{plaintext, <<"deleteIndexes">>, atom_to_binary(element(1,Rec), latin1)},
 				  		 {plaintext, <<"index">>, mongodb:gen_keyname(Rec,Key)}]).
 
-count([_|_] = Col) ->
-	count(list_to_binary(Col));
-count(<<_/binary>> = Col) ->
-	case mongodb:exec_cmd(DB, [{plaintext, <<"count">>, Col}, {plaintext, <<"ns">>, DB}]) of
+% How many documents in mydoc collection: Mong:count("mydoc").
+%										  Mong:count(#mydoc{}). 
+% How many documents with i larger than 2: Mong:count(#mydoc{i = {gt, 2}}).
+count(Col) ->
+	count(Col,undefined).
+count(ColIn, Query) ->
+	case true of
+		_ when is_list(ColIn) ->
+			Col = list_to_binary(ColIn);
+		_ when is_tuple(ColIn) ->
+			Col = atom_to_binary(element(1,ColIn), latin1);
+		_ ->
+			Col = ColIn
+	end,
+	case true of
+		_ when is_list(Query) ->
+			Cmd = [{plaintext, <<"count">>, Col}, {plaintext, <<"ns">>, DB}, {<<"query">>, {bson, mongodb:encode(Query)}}];
+		_ when is_tuple(ColIn), Query == undefined ->
+			Cmd = [{plaintext, <<"count">>, Col}, {plaintext, <<"ns">>, DB}, {<<"query">>, {bson, mongodb:encoderec(ColIn)}}];
+		_ when is_tuple(ColIn), is_tuple(Query) ->
+			Cmd = [{plaintext, <<"count">>, Col}, {plaintext, <<"ns">>, DB}, {<<"query">>, {bson, mongodb:encoderec(Query)}}];
+		_ when Query == undefined ->
+			Cmd = [{plaintext, <<"count">>, Col}, {plaintext, <<"ns">>, DB}]
+	end,
+	case mongodb:exec_cmd(DB, Cmd) of
 		[{<<"n">>, Val}|_] ->
 			round(Val);
 		_ ->
 			false
-	end;
-count(Col) when is_tuple(Col) ->
-	count(atom_to_binary(Col, latin1)).
+	end.
 	
 
 addUser(U, P) when is_binary(U) ->
