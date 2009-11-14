@@ -3,6 +3,18 @@
 -compile(export_all).
 -include_lib("erlmongo.hrl").
 
+% Dynamically add record information for erlmongo. 
+% Records do not have to have recindex as first element (it will be ignored). docid still needs to be present of course.
+% For embedded records, use {name_of_record, index_of_record_in_RECTABLE} if embedded record information
+%   is in RECTABLE (defined in erlmongo.hrl). If it is not (was added with recinfo), 
+%   use {name_of_record, undefined} -> second element can be anything but an integer
+% Example: recinfo(#mydoc{}, record_info(fields, mydoc))
+% 		   recinfo(mydoc, record_info(fields, mydoc))
+recinfo(RecName, Info) when is_atom(RecName) ->
+	put({recinfo, RecName}, Info);
+recinfo(Rec, Info) when is_tuple(Rec) ->
+	put({recinfo, element(1,Rec)}, Info).
+
 name([_|_] = Collection) ->
 	name(list_to_binary(Collection));
 name(<<_/binary>> = Collection) ->

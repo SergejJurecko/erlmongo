@@ -695,19 +695,43 @@ constr_killcursors(U) ->
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+recfields(Rec) ->
+	case get({recinfo, element(1,Rec)}) of
+		undefined ->
+			[_|Fields] = element(element(2, Rec), ?RECTABLE),
+			Fields;
+		[recindex|Fields] ->
+			Fields;
+		Fields ->
+			Fields
+	end.
+recoffset(Rec) ->
+	case get({recinfo, element(1,Rec)}) of
+		undefined ->
+			3;
+		[recindex|_] ->
+			3;
+		_ ->
+			2
+	end.
+
 encoderec(Rec) ->
-	[_|Fields] = element(element(2, Rec), ?RECTABLE),
-	encoderec(<<>>, deep, Rec, Fields, 3, <<>>).
+	% [_|Fields] = element(element(2, Rec), ?RECTABLE),
+	Fields = recfields(Rec),
+	% io:format("~p~n", [Fields]),
+	encoderec(<<>>, deep, Rec, Fields, recoffset(Rec), <<>>).
 encode_findrec(Rec) ->
-	[_|Fields] = element(element(2, Rec), ?RECTABLE),
-	encoderec(<<>>, flat, Rec, Fields, 3, <<>>).
+	% [_|Fields] = element(element(2, Rec), ?RECTABLE),
+	Fields = recfields(Rec),
+	encoderec(<<>>, flat, Rec, Fields, recoffset(Rec), <<>>).
 	
 encoderec(NameRec, Type, Rec, [{FieldName, _RecIndex}|T], N, Bin) ->
 	case element(N, Rec) of
 		undefined ->
 			encoderec(NameRec, Type, Rec, T, N+1, Bin);
 		SubRec when Type == flat ->
-			[_|SubFields] = element(element(2, SubRec), ?RECTABLE),
+			% [_|SubFields] = element(element(2, SubRec), ?RECTABLE),
+			SubFields = recfields(Rec),
 			case NameRec of
 				<<>> ->
 					Dom = atom_to_binary(FieldName, latin1);
@@ -752,8 +776,9 @@ encoderec_selector(_, undefined) ->
 encoderec_selector(_, <<>>) ->
 	<<>>;
 encoderec_selector(Rec, SelectorList) ->
-	[_|Fields] = element(element(2, Rec), ?RECTABLE),
-	encoderec_selector(SelectorList, Fields, 3, <<>>).
+	% [_|Fields] = element(element(2, Rec), ?RECTABLE),
+	Fields = recfields(Rec),
+	encoderec_selector(SelectorList, Fields, recoffset(Rec), <<>>).
 
 % SelectorList is either a list of indexes in the record tuple, or a list of {TupleIndex, TupleVal}. Use the index to get the name
 % from the list of names.
@@ -794,8 +819,9 @@ gen_prop_keyname([], B) ->
 	B.
 	
 gen_keyname(Rec, Keys) ->
-	[_|Fields] = element(element(2, Rec), ?RECTABLE),
-	gen_keyname(Keys, Fields, 3, <<>>).
+	% [_|Fields] = element(element(2, Rec), ?RECTABLE),
+	Fields = recfields(Rec),
+	gen_keyname(Keys, Fields, recoffset(Rec), <<>>).
 
 gen_keyname([{KeyIndex, KeyVal}|Keys], [Field|Fields], KeyIndex, Name) ->
 	case Field of
@@ -821,21 +847,33 @@ decoderec(Rec, <<>>) ->
 	% Rec;
 	erlang:make_tuple(tuple_size(Rec), undefined, [{1, element(1,Rec)}, {2, element(2,Rec)}]);
 decoderec(Rec, Bin) ->
-	[_|Fields] = element(element(2, Rec), ?RECTABLE),
-	decode_records([], Bin, tuple_size(Rec), element(1,Rec), element(2, Rec), Fields).
+	% [_|Fields] = element(element(2, Rec), ?RECTABLE),
+	Fields = recfields(Rec),
+	case recoffset(Rec) of
+		3 ->
+			decode_records([], Bin, tuple_size(Rec), element(1,Rec), element(2, Rec), Fields);
+		_ ->
+			decode_records([], Bin, tuple_size(Rec), element(1,Rec), undefined, Fields)
+	end.
+	
 
 decode_records(RecList, <<_ObjSize:32/little, Bin/binary>>, TupleSize, Name, TabIndex, Fields) ->
-	{FieldList, Remain} = get_fields([], Fields, Bin),
-	% io:format("~p~n", [FieldList]),
-	NewRec = erlang:make_tuple(TupleSize, undefined, [{1, Name},{2, TabIndex}|FieldList]),
+	case TabIndex of
+		undefined ->
+			{FieldList, Remain} = get_fields([], Fields, 2, Bin),
+			NewRec = erlang:make_tuple(TupleSize, undefined, [{1, Name}|FieldList]);
+		_ ->
+			{FieldList, Remain} = get_fields([], Fields, 3, Bin),
+			NewRec = erlang:make_tuple(TupleSize, undefined, [{1, Name},{2, TabIndex}|FieldList])
+	end,
 	decode_records([NewRec|RecList], Remain, TupleSize, Name, TabIndex, Fields);
 decode_records(R, <<>>, _, _, _, _) ->
 	lists:reverse(R).
 
-get_fields(RecVals, Fields, Bin) ->
-	case rec_field_list(RecVals, 3, Fields, Bin) of
+get_fields(RecVals, Fields, Offset, Bin) ->
+	case rec_field_list(RecVals, Offset, Fields, Bin) of
 		{again, SoFar, Rem} ->
-			get_fields(SoFar, Fields, Rem);
+			get_fields(SoFar, Fields, Offset, Rem);
 		Res ->
 			Res
 	end.
@@ -865,8 +903,15 @@ rec_field_list(RecVals, N, [Field|Fields], <<Type:8, Bin/binary>>) ->
 					<<LRecSize:32/little, RecObj/binary>> = ValRem,
 					RecSize = LRecSize - 4,
 					<<RecBin:RecSize/binary, Remain/binary>> = RecObj,
-					[_|RecFields] = element(RecIndex, ?RECTABLE),
-					[Value] = decode_records([], <<LRecSize:32/little, RecBin/binary>>, length(element(RecIndex, ?RECTABLE))+1, 
+					case is_integer(RecIndex) of
+						true ->
+							[_|RecFields] = element(RecIndex, ?RECTABLE),
+							RecLen = length(RecFields)+2;
+						false ->
+							RecFields = get({recinfo, RecName}),
+							RecLen = length(RecFields)+1
+					end,
+					[Value] = decode_records([], <<LRecSize:32/little, RecBin/binary>>, RecLen, 
 													RecName, RecIndex, RecFields),
 					rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain);
 				_ ->
