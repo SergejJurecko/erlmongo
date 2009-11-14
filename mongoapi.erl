@@ -8,7 +8,7 @@
 % docid still needs to be either first element (if no recindex) or second (if recindex present).
 % For embedded records, use {name_of_record, index_of_record_in_RECTABLE} if embedded record information
 %   is in RECTABLE (defined in erlmongo.hrl). If it is not (was added with recinfo), 
-%   use {name_of_record, undefined} -> second element can be anything but an integer
+%   use {name_of_record, undefined} 
 % Example: recinfo(#mydoc{}, record_info(fields, mydoc))
 % 		   recinfo(mydoc, record_info(fields, mydoc))
 recinfo(RecName, Info) when is_atom(RecName) ->

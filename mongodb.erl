@@ -696,7 +696,13 @@ constr_killcursors(U) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 recfields(Rec) ->
-	case get({recinfo, element(1,Rec)}) of
+	case true of
+		_ when is_tuple(Rec) ->
+			RecFields = get({recinfo, element(1,Rec)});
+		_ when is_atom(Rec) ->
+			RecFields = get({recinfo, Rec})
+	end,
+	case RecFields of
 		undefined ->
 			[_|Fields] = element(element(2, Rec), ?RECTABLE),
 			Fields;
@@ -706,7 +712,13 @@ recfields(Rec) ->
 			Fields
 	end.
 recoffset(Rec) ->
-	case get({recinfo, element(1,Rec)}) of
+	case true of
+		_ when is_tuple(Rec) ->
+			RecFields = get({recinfo, element(1,Rec)});
+		_ when is_atom(Rec) ->
+			RecFields = get({recinfo, Rec})
+	end,
+	case RecFields of
 		undefined ->
 			3;
 		[recindex|_] ->
@@ -731,7 +743,7 @@ encoderec(NameRec, Type, Rec, [{FieldName, _RecIndex}|T], N, Bin) ->
 			encoderec(NameRec, Type, Rec, T, N+1, Bin);
 		SubRec when Type == flat ->
 			% [_|SubFields] = element(element(2, SubRec), ?RECTABLE),
-			SubFields = recfields(Rec),
+			SubFields = recfields(SubRec),
 			case NameRec of
 				<<>> ->
 					Dom = atom_to_binary(FieldName, latin1);
@@ -908,8 +920,8 @@ rec_field_list(RecVals, N, [Field|Fields], <<Type:8, Bin/binary>>) ->
 							[_|RecFields] = element(RecIndex, ?RECTABLE),
 							RecLen = length(RecFields)+2;
 						false ->
-							RecFields = get({recinfo, RecName}),
-							RecLen = length(RecFields)+1
+							RecFields = recfields(RecName),
+							RecLen = length(RecFields)+recoffset(RecName)-1
 					end,
 					[Value] = decode_records([], <<LRecSize:32/little, RecBin/binary>>, RecLen, 
 													RecName, RecIndex, RecFields),
