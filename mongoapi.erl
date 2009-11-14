@@ -4,7 +4,8 @@
 -include_lib("erlmongo.hrl").
 
 % Dynamically add record information for erlmongo. 
-% Records do not have to have recindex as first element (it will be ignored). docid still needs to be present of course.
+% Records do not have to have recindex as first element (it will be ignored). 
+% docid still needs to be either first element (if no recindex) or second (if recindex present).
 % For embedded records, use {name_of_record, index_of_record_in_RECTABLE} if embedded record information
 %   is in RECTABLE (defined in erlmongo.hrl). If it is not (was added with recinfo), 
 %   use {name_of_record, undefined} -> second element can be anything but an integer
@@ -48,7 +49,7 @@ save(Collection, [_|_] = L) ->
 			end
 	end;
 save(Collection, Rec) ->
-	case element(3, Rec) of
+	case element(mongodb:recoffset(Rec), Rec) of
 		undefined ->
 			OID = mongodb:create_id(),
 			case mongodb:exec_insert(name(Collection), #insert{documents = mongodb:encoderec(setelement(3, Rec, {oid, OID}))}) of
