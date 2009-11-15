@@ -49,10 +49,11 @@ save(Collection, [_|_] = L) ->
 			end
 	end;
 save(Collection, Rec) ->
-	case element(mongodb:recoffset(Rec), Rec) of
+	Offset = mongodb:recoffset(Rec),
+	case element(Offset, Rec) of
 		undefined ->
 			OID = mongodb:create_id(),
-			case mongodb:exec_insert(name(Collection), #insert{documents = mongodb:encoderec(setelement(3, Rec, {oid, OID}))}) of
+			case mongodb:exec_insert(name(Collection), #insert{documents = mongodb:encoderec(setelement(Offset, Rec, {oid, OID}))}) of
 				ok ->
 					{oid, OID};
 				R ->
