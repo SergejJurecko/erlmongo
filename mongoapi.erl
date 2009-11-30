@@ -234,7 +234,7 @@ cursor(Query, Selector, Opts, From, Limit) ->
 			{ok, Cursor, mongodb:decoderec(Query, Result)}
 	end.
 getMore(Rec, Cursor) ->
-	case mongodb:exec_getmore(Cursor) of
+	case mongodb:exec_getmore(name(element(1,Rec)), Cursor) of
 		not_connected ->
 			not_connected;
 		{done, <<>>} ->

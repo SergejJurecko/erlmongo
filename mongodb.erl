@@ -128,34 +128,39 @@ exec_cursor(Col, Quer) ->
 						0 ->
 							{done, Result};
 						_ ->
-							PID = spawn_link(fun() -> cursorcleanup(true) end),
-							PID ! {start, CursorID},
-							{#cursor{id = CursorID, limit = Quer#search.ndocs, pid = PID}, Result}
+							PIDcl = spawn_link(fun() -> cursorcleanup(true) end),
+							PIDcl ! {start, CursorID},
+							{#cursor{id = CursorID, limit = Quer#search.ndocs, pid = PIDcl}, Result}
 					end
 				after 5000 ->
-					<<>>
+					not_connected
 			end
 	end.
 exec_getmore(Col, C) ->
-	case gen_server:call(?MODULE, {getread}) of
-		undefined ->
-			not_connected;
-		PID ->
-			PID ! {getmore, self(), Col, C},
-			receive
-				{query_result, _Src, <<_ReqID:32/little, _RespTo:32/little, 1:32/little, 0:32, 
-								 CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
-					% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
-					% io:format("~p~n", [Result]),
-					case CursorID of
-						0 ->
-							C#cursor.pid ! {stop},
-							{done, Result};
-						_ ->
-							{ok, Result}
+	case erlang:is_process_alive(C#cursor.pid) of
+		false ->
+			{done, <<>>};
+		true ->			
+			case gen_server:call(?MODULE, {getread}) of
+				undefined ->
+					not_connected;
+				PID ->
+					PID ! {getmore, self(), Col, C},
+					receive
+						{query_result, _Src, <<_ReqID:32/little, _RespTo:32/little, 1:32/little, 0:32, 
+										 CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+							% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
+							% io:format("~p~n", [Result]),
+							case CursorID of
+								0 ->
+									C#cursor.pid ! {stop},
+									{done, Result};
+								_ ->
+									{ok, Result}
+							end
+						after 5000 ->
+							{done, <<>>}
 					end
-				after 5000 ->
-					<<>>
 			end
 	end.
 exec_delete(Collection, D) ->
@@ -179,7 +184,7 @@ exec_find(Collection, Quer) ->
 					% io:format("~p~n", [Result]),
 					Result
 				after 10000 ->
-					<<>>
+					not_connected
 			end
 	end.
 exec_insert(Collection, D) ->
@@ -556,7 +561,7 @@ cursorcleanup(P) ->
 		{stop} ->
 			true;
 		{cleanup} ->
-			case gen_server:call(?MODULE, {get_conn}) of
+			case gen_server:call(?MODULE, {getread}) of
 				false ->
 					false;
 				PID ->
@@ -671,7 +676,7 @@ constr_query(U, Name) ->
 	<<Header/binary,Query/binary>>.
 
 constr_getmore(U, Name) ->
-	GetMore = <<0:32, Name/binary, 0:8, (U#cursor.limit):32/little, (U#cursor.id):62/little>>,
+	GetMore = <<0:32, Name/binary, 0:8, (U#cursor.limit):32/little, (U#cursor.id):64/little>>,
 	Header = constr_header(byte_size(GetMore), random:uniform(4000000000), 0, ?OP_GET_MORE),
 	<<Header/binary, GetMore/binary>>.
 
@@ -681,7 +686,7 @@ constr_delete(U, Name) ->
 	<<Header/binary, Delete/binary>>.
 	
 constr_killcursors(U) ->
-	Kill = <<0:32, (byte_size(U#killc.cur_ids) div 8):32, (U#killc.cur_ids)/binary>>,
+	Kill = <<0:32, (byte_size(U#killc.cur_ids) div 8):32/little, (U#killc.cur_ids)/binary>>,
 	Header = constr_header(byte_size(Kill), random:uniform(4000000000), 0, ?OP_KILL_CURSORS),
 	<<Header/binary, Kill/binary>>.
 
