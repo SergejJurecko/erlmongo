@@ -285,6 +285,13 @@ handle_cast({clear_indexcache}, P) ->
 	ets:delete_all_objects(P#mngd.indexes),
 	{noreply, P};
 handle_cast({conninfo, Conn}, P) ->
+	case P#mngd.read of
+		undefined ->
+			true;
+		PID ->
+			% reconnect
+			PID ! {stop}
+	end,
 	{noreply, P#mngd{conninfo = Conn}};
 handle_cast({start_connection, SendBack}, P) ->
 	handle_cast({start_connection}, P#mngd{conn_established_cb = SendBack});
@@ -591,10 +598,14 @@ connection(#con{state = free} = P, <<>>) ->
 			Bin = constr_insert(Doc, Collection),
 			ok = gen_tcp:send(P#con.sock, Bin),
 			connection(P, <<>>);
-		{update, Collection, Doc} ->
+		{update, Collection, #update{} = Doc} ->
 			Bin = constr_update(Doc, Collection),
 			ok = gen_tcp:send(P#con.sock, Bin),
 			connection(P, <<>>);
+		{update, Collection, [_|_] = Doc} ->
+			Bin = lists:foldl(fun(D,B) -> <<B/binary,(constr_update(D, Collection))/binary>> end, <<>>,Doc),
+			ok = gen_tcp:send(P#con.sock, Bin),
+			connection(P,<<>>);
 		{delete, Col, D} ->
 			Bin = constr_delete(D, Col),
 			ok = gen_tcp:send(P#con.sock, Bin),

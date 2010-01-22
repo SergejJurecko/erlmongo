@@ -23,6 +23,7 @@ name(<<_/binary>> = Collection) ->
 name(Collection) when is_atom(Collection) ->
 	name(atom_to_binary(Collection, latin1)).
 
+% Example: remove(#mydoc{},[{#mydoc.docid,Id}])
 remove(Rec, Selector) when is_tuple(Rec) ->
 	mongodb:exec_delete(name(element(1,Rec)), #delete{selector = mongodb:encoderec_selector(Rec, Selector)});
 remove(Col, Selector) ->
@@ -71,27 +72,47 @@ save(Collection, Rec) ->
 save(Rec) ->
 	save(element(1,Rec), Rec).
 
-update(Collection, [_|_] = Selector, [_|_] = Doc, true) ->
-	update(Collection, [_|_] = Selector, [_|_] = Doc, 1);
-update(Collection, [_|_] = Selector, [_|_] = Doc, false) ->
-	update(Collection, [_|_] = Selector, [_|_] = Doc, 0);
-update(Collection, [_|_] = Selector, [_|_] = Doc, Upsert) ->
-	mongodb:exec_update(name(Collection), #update{selector = mongodb:encode(Selector), document = mongodb:encode(Doc), upsert = Upsert}).
 % Examples: 
-%  update([{#mydoc.name, "docname"}], #mydoc{name = "different name"}, 1)
-%  update([{#mydoc.name, "docname"}], #mydoc{i = {inc, 1}}, 1)
-%  update([{#mydoc.name, "docname"}], #mydoc{tags = {push, "lamer"}}, 1)
-%  update([{#mydoc.name, "docname"}], #mydoc{tags = {pushAll, ["dumbass","jackass"]}}, 1)
-%  update([{#mydoc.name, "docname"}], #mydoc{tags = {pullAll, ["dumbass","jackass"]}}, 1)
+%  update([{#mydoc.name, "docname"}], #mydoc{name = "different name"}, [upsert])
+%  update([{#mydoc.name, "docname"}], #mydoc{i = {inc, 1}}, [upsert])
+%  update([{#mydoc.name, "docname"}], #mydoc{tags = {push, "lamer"}}, [])
+%  update([{#mydoc.name, "docname"}], #mydoc{tags = {pushAll, ["dumbass","jackass"]}}, [upsert])
+%  update([{#mydoc.name, "docname"}], #mydoc{tags = {pullAll, ["dumbass","jackass"]}}, [upsert])
 %  and so on. 
 % modifier list: inc, set, push, pushAll, pop, pull, pullAll
-update(Selector, Rec, true) ->
-	update(Selector, Rec, 1);
-update(Selector, Rec, false) ->
-	update(Selector, Rec, 0);
-update(Selector, Rec, Upsert) ->
-	mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encoderec_selector(Rec, Selector), upsert = Upsert,
+% Flags can be: [upsert,multi]
+update(Selector, Rec, Flags) ->
+	mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encoderec_selector(Rec, Selector), 
+													  upsert = updateflags(Flags,0),
 	 												  document = mongodb:encoderec(Rec)}).
+update(Collection, [_|_] = Selector, [_|_] = Doc, Flags) ->
+	mongodb:exec_update(name(Collection), #update{selector = mongodb:encode(Selector), document = mongodb:encode(Doc), 
+								upsert = updateflags(Flags,0)}).
+% batchUpdate is not like batchInsert in that everything is one mongo command. With batchUpdate every document becomes
+%   a new mongodb command, but they are all encoded and sent at once. So the communication and encoding overhead is smaller.
+% Limitations: 
+%  - All documents need to be in the same collection
+batchUpdate(Sels,Recs,Flags) ->
+	[R|_] = Recs,
+	mongodb:exec_update(name(element(1,R)), encbu([], Sels,Recs,updateflags(Flags,0))).
+	
+% Selector and doc are lists of document lists
+batchUpdate(Col, [_|_] = Selector, [_|_] = Doc, Flags) ->
+	mongodb:exec_update(name(Col),encbu([],Selector,Doc,updateflags(Flags,0))).
+	
+encbu(L, [Sel|ST],[[_|_] = Doc|DT],Flags) ->
+	encbu([#update{selector = mongodb:encode(Sel), document = mongodb:encode(Doc), upsert = Flags}|L],ST,DT,Flags);
+encbu(L, [Sel|ST],[Doc|DT],Flags) ->
+	encbu([#update{selector = mongodb:encoderec_selector(Doc, Sel), document = mongodb:encoderec(Doc), upsert = Flags}|L],ST,DT,Flags);
+encbu(L,[],[],_) ->
+	L.	
+	
+updateflags([upsert|T],V) ->
+	updateflags(T,V bor 1);
+updateflags([multi|T],V) ->
+	updateflags(T,V bor 2);
+updateflags([], V) ->
+	V.
 
 insert(Col, [_|_] = L) ->
 	mongodb:exec_insert(name(Col), #insert{documents = mongodb:encode(L)}).
