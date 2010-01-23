@@ -108,7 +108,7 @@ replicaPairs(Addr1,Addr2) ->
 	gen_server:cast(?MODULE, {conninfo, {replicaPairs, {IP1,Port1}, {IP2,Port2}}}).
 	
 datetime_to_now(Loctime) ->	
-	Secs = calendar:datetime_to_gregorian_seconds(Loctime) - 719528 * 24 * 60 * 60 - 3600,
+	Secs = calendar:datetime_to_gregorian_seconds(Loctime) - 719528 * 24 * 60 * 60,
 	{Secs div 1000000, Secs rem 1000000,0}.
 	
 ensureIndex(DB,Bin) ->
