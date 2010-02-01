@@ -1010,10 +1010,13 @@ encode_element({Name, [_|_] = Value}) ->
 encode_element({Name, <<_/binary>> = Value}) ->
 	ValueEncoded = encode_cstring(Value),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
-encode_element({Name, Value}) when Value bsr 32 /= 0 ->
-	<<18, Name/binary, 0, Value:64/little-signed>>;
-encode_element({Name, Value}) when Value bsr 32 == 0 ->
-	<<16, Name/binary, 0, Value:32/little-signed>>;
+encode_element({Name, Value}) when is_integer(Value) ->
+	case true of
+		_ when Value > 2147483648; Value < -2147483648 ->
+			<<18, Name/binary, 0, Value:64/little-signed>>;
+		_ ->
+			<<16, Name/binary, 0, Value:32/little-signed>>
+	end;
 encode_element({plaintext, Name, Val}) -> % exists for performance reasons.
 	<<2, Name/binary, 0, (byte_size(Val)+1):32/little-signed, Val/binary, 0>>;
 encode_element({Name, true}) ->
