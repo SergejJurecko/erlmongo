@@ -1012,7 +1012,7 @@ encode_element({Name, <<_/binary>> = Value}) ->
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
 encode_element({Name, Value}) when is_integer(Value) ->
 	case true of
-		_ when Value > 2147483648; Value < -2147483648 ->
+		_ when Value >= 2147483648; Value =< -2147483648 ->
 			<<18, Name/binary, 0, Value:64/little-signed>>;
 		_ ->
 			<<16, Name/binary, 0, Value:32/little-signed>>
@@ -1096,8 +1096,14 @@ encode_element({Name, {ref, Collection, <<First:8/little-binary-unit:8, Second:4
   <<12, Name/binary, 0, (byte_size(CollectionEncoded)):32/little-signed, CollectionEncoded/binary, OID/binary>>;
 encode_element({Name, {code, Code}}) ->
   CodeEncoded = encode_cstring(Code),
-  <<13, Name/binary, 0, (byte_size(CodeEncoded)):32/little-signed, CodeEncoded/binary>>.
-
+  <<13, Name/binary, 0, (byte_size(CodeEncoded)):32/little-signed, CodeEncoded/binary>>;
+% code with scope
+encode_element({Name, {code, C, S}}) ->
+	Code = encode_cstring(C),
+	Scope = encode(S),
+	<<15, Name/binary, 0, (8+byte_size(Code)+byte_size(Scope)):32/little, (byte_size(Code)):32/little, Code/binary, Scope/binary>>.
+	
+	
 encarray(L, [H|T], N) ->
 	encarray([{integer_to_list(N), H}|L], T, N+1);
 encarray(L, [], _) ->
@@ -1121,6 +1127,7 @@ encode_cstring(String) ->
 % 			[BSON | decode(Rest)]
 %   	end.
 decode(Bin) ->
+	% io:format("Decoding ~p~n", [Bin]),
 	decode(Bin,[]).
 decode(<<_Size:32, Bin/binary>>, L) ->
   	{BSON, Rem} = decode_next(Bin, []),
@@ -1196,8 +1203,16 @@ decode_value(13, <<_Size:32/little-signed, Data/binary>>) ->
 	{Code, Rest} = decode_cstring(Data, <<>>),
 	{{code, Code}, Rest};
 decode_value(14, _Binary) ->
-	throw(encountered_ommitted);
-decode_value(15, _Binary) ->
-	throw(encountered_ommitted);
+	% throw(encountered_ommitted);
+	decode_value(2,_Binary);
+decode_value(15, <<ComplSize:32/little, StrBSize:32/little,Rem/binary>>) ->
+	StrSize = StrBSize - 1,
+	ScopeSize = ComplSize - 8 - StrBSize,
+	<<Code:StrSize/binary, _, Scope:ScopeSize/binary,Rest/binary>> = Rem,
+	{{code,Code,decode(Scope)}, Rest};
 decode_value(18, <<Integer:32/little-signed, Rest/binary>>) ->
 	{Integer, Rest}.
+	
+	
+	
+	

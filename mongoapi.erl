@@ -129,13 +129,20 @@ batchInsert(LRecs) ->
 	
 	
 % Advanced queries:
+%  Regex:                            Mong:find(#mydoc{name = {regex, "(.+?)\.flv", "i"}}, undefined,0,0)
 %  Documents with even i:            Mong:find(#mydoc{i = {mod, 2, 0}}, undefined, 0,0).
 %  Documents with i larger than 2:   Mong:find(#mydoc{i = {gt, 2}}, undefined, 0,0).
 %  Documents with i between 2 and 5: Mong:find(#mydoc{i = {in, {gt, 2}, {lt, 5}}}, undefined, 0,0).
 %  in example:     Mong:find(#mydoc{tags = {in, [2,3,4]}}, undefined, 0,0).
 %  exists example: Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
 %  Advanced query options: gt,lt,gte,lte, ne, in, nin, all, size, exists
-
+%  Possible regex options: "ilmsux" -> IN THIS SEQUENCE! (not all are necessary of course)
+% 	i 	 case-insensitive matching
+%	m 	multiline: "^" and "$" match the beginning / end of each line as well as the whole string
+%	x 	verbose / comments: the pattern can contain comments
+%	l (lowercase L) 	locale: \w, \W, etc. depend on the current locale
+%	s 	dotall: the "." character matches everything, including newlines
+%	u 	unicode: \w, \W, etc. match unicode
 findOne(Col, []) ->
 	case find(Col, [], undefined, 0, 1) of
 		{ok, [Res]} -> {ok, Res};
@@ -358,7 +365,24 @@ addUser(Username, Password) ->
 	save(<<"system.users">>, [{<<"user">>, Username},
 							  {<<"pwd">>, mongodb:dec2hex(<<>>, erlang:md5(Username ++ ":mongo:" ++ Password))}]).
 
-	
+% Collection: name of collection
+% Key (list of fields): [{"i", 1}]
+% Reduce: {code, "JS code", Parameters} -> Parameters can be []
+% Initial: default values for output object [{"result",0}]
+% Optional: [{"$keyf", {code, "JScode",Param}}, {"cond", CondObj}, {"finalize", {code,_,_}}]
+% Example: Mong:group("file",[{"ch",1}], {code, "function(doc,out){out.size += doc.size}", []}, [{"size", 0}],[]).
+group(Collection, Key,Reduce,Initial,Optional) ->
+	runCmd([{"group", [{<<"ns">>, Collection},
+					   {<<"key">>,Key},
+					   {<<"$reduce">>, Reduce},
+					   {<<"initial">>, Initial}|Optional]}]).
+
+% Mong:eval("function(){return 3+3;}").
+% Mong:eval({code, "function(){return what+3;}",[{"what",5}]}).
+eval(Code) ->
+	runCmd([{<<"$eval">>, Code}]).
+
+
 % Runs $cmd. Parameters can be just a string it will be converted into {string,1}
 runCmd({_,_} = T) ->
 	runCmd([T]);
