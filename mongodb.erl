@@ -186,7 +186,7 @@ exec_find(Collection, Quer) ->
 					% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
 					% io:format("~p~n", [Result]),
 					Result
-				after 10000 ->
+				after 20000 ->
 					not_connected
 			end
 	end.
@@ -665,7 +665,7 @@ connection(P, Buf) ->
 			true;
 		{tcp_closed, _} ->
 			exit(stop)
-		after 2000 ->
+		after 20000 ->
 			exit(stop)
 	end.
 
