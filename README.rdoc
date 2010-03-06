@@ -22,11 +22,11 @@ I haven't used erlmongo in production yet, so all the bugs might not be ironed o
   erl
   rr("erlmongo.hrl").
   application:start(erlmongo).
-  % Set mongodb server info. singleServer() is the same as singleServer("localhost:27017")
-  mongodb:singleServer().
-  mongodb:connect().
+  % Set mongodb server info. singleServer(PoolName) is the same as singleServer(PoolName,"localhost:27017")
+  mongodb:singleServer(def).
+  mongodb:connect(def).
   % Create an interface for test database (it has to be a binary)
-  Mong = mongoapi:new(<<"test">>).
+  Mong = mongoapi:new(def,<<"test">>).
   
   % Save a new document
   Mong:save(#mydoc{name = "MyDocument", i = 10}).
@@ -102,6 +102,7 @@ Collections
 * count
 * dropCollection
 * createCollection
+* group
 
 Search
 * find
@@ -110,6 +111,8 @@ Search
 * findOne
 
 DB
+* eval
+* stats
 * runCmd
 * repairDatabase
 * cloneDatabase

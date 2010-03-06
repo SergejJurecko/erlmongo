@@ -1,4 +1,4 @@
--module(mongoapi, [DB]).
+-module(mongoapi, [Pool,DB]).
 % -export([save/1,findOne/2,findOne/1,find/1,find/2,find/3,find/4, update/2, insert/1]).
 -compile(export_all).
 -include_lib("erlmongo.hrl").
@@ -25,9 +25,9 @@ name(Collection) when is_atom(Collection) ->
 
 % Example: remove(#mydoc{},[{#mydoc.docid,Id}])
 remove(Rec, Selector) when is_tuple(Rec) ->
-	mongodb:exec_delete(name(element(1,Rec)), #delete{selector = mongodb:encoderec_selector(Rec, Selector)});
+	mongodb:exec_delete(Pool,name(element(1,Rec)), #delete{selector = mongodb:encoderec_selector(Rec, Selector)});
 remove(Col, Selector) ->
-	mongodb:exec_delete(name(Col), #delete{selector = mongodb:encode(Selector)}).
+	mongodb:exec_delete(Pool,name(Col), #delete{selector = mongodb:encode(Selector)}).
 	
 	
 save(Collection, [_|_] = L) ->
@@ -35,14 +35,14 @@ save(Collection, [_|_] = L) ->
 	case lists:keysearch(<<"_id">>, 1, L) of
 		false ->
 			OID = mongodb:create_id(),
-			case mongodb:exec_insert(name(Collection), #insert{documents = mongodb:encode([{<<"_id">>, {oid, OID}}|L])}) of
+			case mongodb:exec_insert(Pool,name(Collection), #insert{documents = mongodb:encode([{<<"_id">>, {oid, OID}}|L])}) of
 				ok ->
 					{oid, OID};
 				R ->
 					R
 			end;
 		{value, {_, OID}} ->
-			case mongodb:exec_update(name(Collection), #update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encode(L)}) of
+			case mongodb:exec_update(Pool,name(Collection), #update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encode(L)}) of
 				ok ->
 					OID;
 				R ->
@@ -54,14 +54,14 @@ save(Collection, Rec) ->
 	case element(Offset, Rec) of
 		undefined ->
 			OID = mongodb:create_id(),
-			case mongodb:exec_insert(name(Collection), #insert{documents = mongodb:encoderec(setelement(Offset, Rec, {oid, OID}))}) of
+			case mongodb:exec_insert(Pool,name(Collection), #insert{documents = mongodb:encoderec(setelement(Offset, Rec, {oid, OID}))}) of
 				ok ->
 					{oid, OID};
 				R ->
 					R
 			end;
 		OID ->
-			case mongodb:exec_update(name(Collection), 
+			case mongodb:exec_update(Pool,name(Collection), 
 								#update{selector = mongodb:encode([{<<"_id">>, OID}]), document = mongodb:encoderec(Rec)}) of
 				ok ->
 					OID;
@@ -82,11 +82,11 @@ save(Rec) ->
 % modifier list: inc, set, push, pushAll, pop, pull, pullAll
 % Flags can be: [upsert,multi]
 update(Selector, Rec, Flags) ->
-	mongodb:exec_update(name(element(1,Rec)), #update{selector = mongodb:encoderec_selector(Rec, Selector), 
+	mongodb:exec_update(Pool,name(element(1,Rec)), #update{selector = mongodb:encoderec_selector(Rec, Selector), 
 													  upsert = updateflags(Flags,0),
 	 												  document = mongodb:encoderec(Rec)}).
 update(Collection, [_|_] = Selector, [_|_] = Doc, Flags) ->
-	mongodb:exec_update(name(Collection), #update{selector = mongodb:encode(Selector), document = mongodb:encode(Doc), 
+	mongodb:exec_update(Pool,name(Collection), #update{selector = mongodb:encode(Selector), document = mongodb:encode(Doc), 
 								upsert = updateflags(Flags,0)}).
 % batchUpdate is not like batchInsert in that everything is one mongo command. With batchUpdate every document becomes
 %   a new mongodb command, but they are all encoded and sent at once. So the communication and encoding overhead is smaller.
@@ -94,11 +94,11 @@ update(Collection, [_|_] = Selector, [_|_] = Doc, Flags) ->
 %  - All documents need to be in the same collection
 batchUpdate(Sels,Recs,Flags) ->
 	[R|_] = Recs,
-	mongodb:exec_update(name(element(1,R)), encbu([], Sels,Recs,updateflags(Flags,0))).
+	mongodb:exec_update(Pool,name(element(1,R)), encbu([], Sels,Recs,updateflags(Flags,0))).
 	
 % Selector and doc are lists of document lists
 batchUpdate(Col, [_|_] = Selector, [_|_] = Doc, Flags) ->
-	mongodb:exec_update(name(Col),encbu([],Selector,Doc,updateflags(Flags,0))).
+	mongodb:exec_update(Pool,name(Col),encbu([],Selector,Doc,updateflags(Flags,0))).
 	
 encbu(L, [Sel|ST],[[_|_] = Doc|DT],Flags) ->
 	encbu([#update{selector = mongodb:encode(Sel), document = mongodb:encode(Doc), upsert = Flags}|L],ST,DT,Flags);
@@ -115,17 +115,17 @@ updateflags([], V) ->
 	V.
 
 insert(Col, [_|_] = L) ->
-	mongodb:exec_insert(name(Col), #insert{documents = mongodb:encode(L)}).
+	mongodb:exec_insert(Pool,name(Col), #insert{documents = mongodb:encode(L)}).
 insert(Rec) ->
-	mongodb:exec_insert(name(element(1,Rec)), #insert{documents = mongodb:encoderec(Rec)}).
+	mongodb:exec_insert(Pool,name(element(1,Rec)), #insert{documents = mongodb:encoderec(Rec)}).
 	
 batchInsert(Col, [[_|_]|_] = LRecs) ->
 	DocBin = lists:foldl(fun(L, Bin) -> <<Bin/binary, (mongodb:encode(L))/binary>> end, <<>>, LRecs),
-	mongodb:exec_insert(name(Col), #insert{documents = DocBin}).
+	mongodb:exec_insert(Pool,name(Col), #insert{documents = DocBin}).
 batchInsert(LRecs) ->
 	[FRec|_] = LRecs,
 	DocBin = lists:foldl(fun(Rec, Bin) -> <<Bin/binary, (mongodb:encoderec(Rec))/binary>> end, <<>>, LRecs),
-	mongodb:exec_insert(name(element(1,FRec)), #insert{documents = DocBin}).
+	mongodb:exec_insert(Pool,name(element(1,FRec)), #insert{documents = DocBin}).
 	
 	
 % Advanced queries:
@@ -187,7 +187,7 @@ find(#search{} = Q) ->
 	
 find(Col, Query, Selector, From, Limit) when is_list(Query) ->
 	Quer = #search{ndocs = Limit, nskip = From, criteria = mongodb:encode(Query), field_selector = mongodb:encode(Selector)},
-	case mongodb:exec_find(name(Col), Quer) of
+	case mongodb:exec_find(Pool,name(Col), Quer) of
 		not_connected ->
 			not_connected;
 		<<>> ->
@@ -197,7 +197,7 @@ find(Col, Query, Selector, From, Limit) when is_list(Query) ->
 	end;
 find(Col, Query, Selector, From, Limit) ->
 	Quer = #search{ndocs = Limit, nskip = From, criteria = mongodb:encode_findrec(Query), field_selector = mongodb:encoderec_selector(Query, Selector)},
-	case mongodb:exec_find(name(Col), Quer) of
+	case mongodb:exec_find(Pool,name(Col), Quer) of
 		not_connected ->
 			not_connected;
 		<<>> ->
@@ -225,7 +225,7 @@ findOpt(Col, Query, Selector, Opts, From, Limit) when is_list(Query) ->
 findOpt(Col, Query, Selector, Opts, From, Limit) ->
 	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
 	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}]))}, 
-	case mongodb:exec_find(name(Col), Quer) of
+	case mongodb:exec_find(Pool,name(Col), Quer) of
 		not_connected ->
 			not_connected;
 		<<>> ->
@@ -251,7 +251,7 @@ cursor(Query, Selector, Opts, From, Limit) ->
 	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
 	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}])),
 				 opts = ?QUER_OPT_CURSOR},
-	case mongodb:exec_cursor(name(element(1,Query)), Quer) of
+	case mongodb:exec_cursor(Pool,name(element(1,Query)), Quer) of
 		not_connected ->
 			not_connected;
 		{done, <<>>} ->
@@ -262,7 +262,7 @@ cursor(Query, Selector, Opts, From, Limit) ->
 			{ok, Cursor, mongodb:decoderec(Query, Result)}
 	end.
 getMore(Rec, Cursor) ->
-	case mongodb:exec_getmore(name(element(1,Rec)), Cursor) of
+	case mongodb:exec_getmore(Pool,name(element(1,Rec)), Cursor) of
 		not_connected ->
 			not_connected;
 		{done, <<>>} ->
@@ -306,23 +306,23 @@ ensureIndex(<<_/binary>> = Collection, Keys) ->
 	Bin = mongodb:encode([{plaintext, <<"name">>, mongodb:gen_prop_keyname(Keys, <<>>)},
 	 					  {plaintext, <<"ns">>, name(Collection)},
 	                      {<<"key">>, {bson, mongodb:encode(Keys)}}]),
-	mongodb:ensureIndex(DB, Bin);
+	mongodb:ensureIndex(Pool,DB, Bin);
 % Example: ensureIndex(#mydoc{}, [{#mydoc.name, 1}])
 ensureIndex(Rec, Keys) ->
 	Bin = mongodb:encode([{plaintext, <<"name">>, mongodb:gen_keyname(Rec, Keys)}, 
 			              {plaintext, <<"ns">>, name(element(1,Rec))}, 
 			              {<<"key">>, {bson, mongodb:encoderec_selector(Rec, Keys)}}]),
-	mongodb:ensureIndex(DB, Bin).
+	mongodb:ensureIndex(Pool,DB, Bin).
 	
 deleteIndexes([_|_] = Collection) ->
 	deleteIndexes(list_to_binary(Collection));
 deleteIndexes(<<_/binary>> = Collection) ->
 	mongodb:clearIndexCache(),
-	mongodb:exec_cmd(DB, [{plaintext, <<"deleteIndexes">>, Collection}, {plaintext, <<"index">>, <<"*">>}]).
+	mongodb:exec_cmd(Pool,DB, [{plaintext, <<"deleteIndexes">>, Collection}, {plaintext, <<"index">>, <<"*">>}]).
 
 deleteIndex(Rec, Key) ->
 	mongodb:clearIndexCache(),
-	mongodb:exec_cmd(DB,[{plaintext, <<"deleteIndexes">>, atom_to_binary(element(1,Rec), latin1)},
+	mongodb:exec_cmd(Pool,DB,[{plaintext, <<"deleteIndexes">>, atom_to_binary(element(1,Rec), latin1)},
 				  		 {plaintext, <<"index">>, mongodb:gen_keyname(Rec,Key)}]).
 
 % How many documents in mydoc collection: Mong:count("mydoc").
@@ -349,7 +349,7 @@ count(ColIn, Query) ->
 		_ when Query == undefined ->
 			Cmd = [{plaintext, <<"count">>, Col}, {plaintext, <<"ns">>, DB}]
 	end,
-	case mongodb:exec_cmd(DB, Cmd) of
+	case mongodb:exec_cmd(Pool,DB, Cmd) of
 		[{<<"n">>, Val}|_] ->
 			round(Val);
 		_ ->
@@ -387,7 +387,7 @@ eval(Code) ->
 runCmd({_,_} = T) ->
 	runCmd([T]);
 runCmd([{_,_}|_] = L) ->
-	mongodb:exec_cmd(DB, L);
+	mongodb:exec_cmd(Pool,DB, L);
 runCmd([_|_] = L) ->
 	runCmd([{L,1}]);
 runCmd(<<_/binary>> = L) ->
@@ -451,10 +451,9 @@ gfsNew(Filename, Opts) ->
 gfsNew([_|_] = Collection, Filename, Opts) ->
 	gfsNew(list_to_binary(Collection), Filename, Opts);
 gfsNew(<<_/binary>> = Collection, Filename, Opts) ->
-	mongodb:startgfs(gfsopts(Opts,#gfs_state{file = #gfs_file{filename = Filename, length = 0, chunkSize = 262144,
+	mongodb:startgfs(gfsopts(Opts,#gfs_state{pool = Pool,file = #gfs_file{filename = Filename, length = 0, chunkSize = 262144,
 															  docid = mongodb:create_id(), uploadDate = now()},
 	 										 collection = name(Collection), db = DB, mode = write})).
-	% Name = name(<<Collection/binary, ".file">>).
 	
 gfsopts([{meta, Rec}|T], S) ->
 	gfsopts(T, S#gfs_state{file = (S#gfs_state.file)#gfs_file{metadata = Rec}});
@@ -490,18 +489,18 @@ gfsOpen(Collection, R) ->
 	case R#gfs_file.docid of
 		undefined ->			
 			Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode_findrec(R)},
-			case mongodb:exec_find(name(<<Collection/binary, ".files">>), Quer) of
+			case mongodb:exec_find(Pool,name(<<Collection/binary, ".files">>), Quer) of
 				not_connected ->
 					not_connected;
 				<<>> ->
 					[];
 				Result ->
 					[DR] = mongodb:decoderec(R, Result),
-					gfsOpen(DR)
+					gfsOpen(Pool,DR)
 			end;
 		_ ->
 			% R
-			mongodb:startgfs(#gfs_state{file = R, collection = name(Collection), db = DB, mode = read})
+			mongodb:startgfs(#gfs_state{pool = Pool,file = R, collection = name(Collection), db = DB, mode = read})
 	end.
 
 gfsRead(PID, N)	->
@@ -521,7 +520,7 @@ gfsDelete(Collection, R) ->
 	case R#gfs_file.docid of
 		undefined ->			
 			Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode_findrec(R)},
-			case mongodb:exec_find(name(<<Collection/binary, ".files">>), Quer) of
+			case mongodb:exec_find(Pool,name(<<Collection/binary, ".files">>), Quer) of
 				not_connected ->
 					not_connected;
 				<<>> ->
