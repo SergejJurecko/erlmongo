@@ -82,12 +82,14 @@ save(Rec) ->
 % modifier list: inc, set, push, pushAll, pop, pull, pullAll
 % Flags can be: [upsert,multi]
 update(Selector, Rec, Flags) ->
-	mongodb:exec_update(Pool,name(element(1,Rec)), #update{selector = mongodb:encoderec_selector(Rec, Selector), 
-													  upsert = updateflags(Flags,0),
-	 												  document = mongodb:encoderec(Rec)}).
+	update(element(1,Rec),Selector,Rec,Flags).
 update(Collection, [_|_] = Selector, [_|_] = Doc, Flags) ->
 	mongodb:exec_update(Pool,name(Collection), #update{selector = mongodb:encode(Selector), document = mongodb:encode(Doc), 
-								upsert = updateflags(Flags,0)}).
+								upsert = updateflags(Flags,0)});
+update(Collection,Selector,Rec,Flags) ->
+	mongodb:exec_update(Pool,name(Collection), #update{selector = mongodb:encoderec_selector(Rec, Selector), 
+													  upsert = updateflags(Flags,0),
+	 												  document = mongodb:encoderec(Rec)}).
 % batchUpdate is not like batchInsert in that everything is one mongo command. With batchUpdate every document becomes
 %   a new mongodb command, but they are all encoded and sent at once. So the communication and encoding overhead is smaller.
 % Limitations: 
@@ -217,27 +219,28 @@ find(Query, Selector, From, Limit) ->
 
 % opts: [reverse, {sort, SortyBy}, explain, {hint, Hint}, snapshot]
 % SortBy: {key, Val} or a list of keyval tuples -> {i,1}  (1 = ascending, -1 = descending)
-% Hint: key
+% Hint: [{Key,Val}] -> [{#mydoc.i,1}]
 findOpt(Col, Query, Selector, Opts, From, Limit) when is_list(Query) ->
-	find(Col, translateopts(undefined, Opts,[{<<"query">>, Query}]), Selector, From, Limit);
+	{_,Q} = translateopts(false,undefined, Opts,[{<<"query">>, Query}]),
+	find(Col, Q, Selector, From, Limit);
 % SortBy examples: {#mydoc.name, 1}, [{#mydoc.i, 1},{#mydoc.name,-1}]
 % Hint example: #mydoc.name
 findOpt(Col, Query, Selector, Opts, From, Limit) ->
+	{H,Q} = translateopts(false,Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}]),
 	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
-	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}]))}, 
+	             criteria = mongodb:encode(Q)}, 
 	case mongodb:exec_find(Pool,name(Col), Quer) of
 		not_connected ->
 			not_connected;
 		<<>> ->
 			{ok, []};
 		Result ->
-			% If opt is explain, it will crash
-			try mongodb:decoderec(Query, Result) of
-				Res ->
-					{ok, Res}
-			catch
-				error:_ ->
-					{ok, mongodb:decode(Result)}
+			case H of
+				true ->
+					{ok, mongodb:decode(Result)};
+				false ->
+					% {ok, mongodb:decode(Result)}
+					{ok, mongodb:decoderec(Query, Result)}
 			end
 	end.
 findOpt(Query, Selector, Opts, From, Limit) ->
@@ -248,8 +251,9 @@ findOpt(#search{} = Q, Opts) ->
 	findOpt(Q#search.criteria, Q#search.field_selector, Opts, Q#search.nskip, Q#search.ndocs).
 	
 cursor(Query, Selector, Opts, From, Limit) ->
+	{_,Q} = translateopts(false,Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}]),
 	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
-	             criteria = mongodb:encode(translateopts(Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}])),
+	             criteria = mongodb:encode(Q),
 				 opts = ?QUER_OPT_CURSOR},
 	case mongodb:exec_cursor(Pool,name(element(1,Query)), Quer) of
 		not_connected ->
@@ -276,26 +280,26 @@ closeCursor(Cur) ->
 	Cur#cursor.pid ! {cleanup},
 	ok.
 	
-translateopts(undefined, [{sort, [_|_] = SortBy}|T], L) ->
-	translateopts(undefined, T, [{<<"orderby">>, SortBy}|L]);
-translateopts(undefined, [{sort, {Key,Val}}|T], L) ->
-	translateopts(undefined, T, [{<<"orderby">>, [{Key,Val}]}|L]);
-translateopts(Rec, [{sort, [_|_] = SortBy}|T], L) ->
-	translateopts(Rec, T, [{<<"orderby">>, {bson, mongodb:encoderec_selector(Rec, SortBy)}}|L]);
-translateopts(Rec, [{sort, {Key,Val}}|T], L) ->
-	translateopts(Rec, T, [{<<"orderby">>, {bson, mongodb:encoderec_selector(Rec, [{Key,Val}])}}|L]);
-translateopts(Rec, [reverse|T], L) ->
-	translateopts(Rec, T, [{<<"orderby">>, [{<<"$natural">>, -1}]}|L]);	
-translateopts(Rec, [explain|T], L) ->
-	translateopts(Rec, T, [{<<"$explain">>, true}|L]);
-translateopts(Rec, [snapshot|T], L) ->
-	translateopts(Rec, T, [{<<"$snapshot">>, true}|L]);	
-translateopts(undefined, [hint, Hint|T], L) ->
-	translateopts(undefined, T, [{<<"$hint">>, [{Hint, 1}]}|L]);
-translateopts(Rec, [hint, Hint|T], L) ->
-	translateopts(Rec, T, [{<<"$hint">>, {bson, mongodb:encoderec_selector([Hint])}}|L]);
-translateopts(_, [], L) ->
-	L.
+translateopts(H,undefined, [{sort, [_|_] = SortBy}|T], L) ->
+	translateopts(H,undefined, T, [{<<"orderby">>, SortBy}|L]);
+translateopts(H,undefined, [{sort, {Key,Val}}|T], L) ->
+	translateopts(H,undefined, T, [{<<"orderby">>, [{Key,Val}]}|L]);
+translateopts(H,Rec, [{sort, [_|_] = SortBy}|T], L) ->
+	translateopts(H,Rec, T, [{<<"orderby">>, {bson, mongodb:encoderec_selector(Rec, SortBy)}}|L]);
+translateopts(H,Rec, [{sort, {Key,Val}}|T], L) ->
+	translateopts(H,Rec, T, [{<<"orderby">>, {bson, mongodb:encoderec_selector(Rec, [{Key,Val}])}}|L]);
+translateopts(H,Rec, [reverse|T], L) ->
+	translateopts(H,Rec, T, [{<<"orderby">>, [{<<"$natural">>, -1}]}|L]);	
+translateopts(_,Rec, [explain|T], L) ->
+	translateopts(true,Rec, T, [{<<"$explain">>, true}|L]);
+translateopts(H,Rec, [snapshot|T], L) ->
+	translateopts(H,Rec, T, [{<<"$snapshot">>, true}|L]);	
+translateopts(H,undefined, [{hint, Hint}|T], L) ->
+	translateopts(H,undefined, T, [{<<"$hint">>, [{Hint, 1}]}|L]);
+translateopts(H,Rec, [{hint, Hint}|T], L) ->
+	translateopts(H,Rec, T, [{<<"$hint">>, {bson, mongodb:encoderec_selector(Rec,Hint)}}|L]);
+translateopts(H,_, [], L) ->
+	{H,L}.
 
 % If you wish to index on an embedded document, use proplists.
 % Example: ensureIndex(<<"mydoc">>, [{<<"name">>, 1}]).
