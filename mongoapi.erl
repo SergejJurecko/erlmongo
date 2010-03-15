@@ -456,7 +456,7 @@ gfsNew([_|_] = Collection, Filename, Opts) ->
 	gfsNew(list_to_binary(Collection), Filename, Opts);
 gfsNew(<<_/binary>> = Collection, Filename, Opts) ->
 	mongodb:startgfs(gfsopts(Opts,#gfs_state{pool = Pool,file = #gfs_file{filename = Filename, length = 0, chunkSize = 262144,
-															  docid = mongodb:create_id(), uploadDate = now()},
+															  docid = {oid,mongodb:create_id()}, uploadDate = now()},
 	 										 collection = name(Collection), db = DB, mode = write})).
 	
 gfsopts([{meta, Rec}|T], S) ->
@@ -500,10 +500,9 @@ gfsOpen(Collection, R) ->
 					[];
 				Result ->
 					[DR] = mongodb:decoderec(R, Result),
-					gfsOpen(Pool,DR)
+					gfsOpen(Collection,DR)
 			end;
 		_ ->
-			% R
 			mongodb:startgfs(#gfs_state{pool = Pool,file = R, collection = name(Collection), db = DB, mode = read})
 	end.
 

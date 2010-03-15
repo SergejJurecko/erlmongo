@@ -407,7 +407,8 @@ start_connection(Name, #conn{conninfo = {replicaPairs, {A1,P1},{A2,P2}}} = P)  -
 		_ ->
 			startcon(Name, undefined, ifmaster, A1,P1),
 			startcon(Name, undefined, ifmaster, A2,P2)
-	end;
+	end,
+	put(Name,P);
 start_connection(_,_) ->
 	true.
 
@@ -458,7 +459,8 @@ handle_info({conn_established, Pool, write, ConnProc}, P) ->
 	{noreply, P};
 handle_info({reconnect, Pool}, P) ->
 	handle_cast({start_connection, Pool}, P);
-handle_info({'EXIT', PID,_}, P) ->
+handle_info({'EXIT', PID,_W}, P) ->
+	% io:format("condied ~p~n", [{PID,_W}]),
 	case get(PID) of
 		undefined ->
 			true;
@@ -624,17 +626,20 @@ gfs_proc(#gfs_state{mode = read} = P, Buf) ->
 					GetChunks = ((N - byte_size(Buf)) div CSize) + 1,
 					% io:format("Finding buf ~p, getchunks ~p, skip ~p~n", [byte_size(Buf), GetChunks,P#gfs_state.nchunk]),
 					Quer = #search{ndocs = GetChunks, nskip = 0, 
-								   criteria = mongodb:encode([{<<"files_id">>, {oid, (P#gfs_state.file)#gfs_file.docid}},
+								   criteria = mongodb:encode([{<<"files_id">>, (P#gfs_state.file)#gfs_file.docid},
 															  {<<"n">>, {in,{gte, P#gfs_state.nchunk},{lte, P#gfs_state.nchunk + GetChunks}}}]), 
 								   field_selector = get(field_selector)},
-					case mongodb:exec_find(<<(P#gfs_state.collection)/binary, ".chunks">>, Quer) of
+					% io:format("find ~p~n", [{P#gfs_state.pool,P#gfs_state.collection}]),
+					case mongodb:exec_find(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".chunks">>, Quer) of
 						not_connected ->
 							Source ! not_connected,
 							gfs_proc(P,Buf);
 						<<>> ->
+							% io:format("Noresult~n"),
 							Source ! eof,
 							gfs_proc(P,Buf);
 						ResBin ->
+							% io:format("Result ~p~n", [ResBin]),
 							Result = chunk2bin(mongodb:decode(ResBin), <<>>),
 							case true of
 								_ when byte_size(Result) + byte_size(Buf) =< N ->
@@ -666,11 +671,11 @@ gfsflush(P, Bin, Out) ->
 	FileID = (P#gfs_state.file)#gfs_file.docid,
 	case Bin of
 		<<ChunkBin:CSize/binary, Rem/binary>> ->
-			Chunk = #gfs_chunk{docid = create_id(), files_id = {oid, FileID}, n = P#gfs_state.nchunk, data = {binary, 2, ChunkBin}},
+			Chunk = #gfs_chunk{docid = {oid,create_id()}, files_id = FileID, n = P#gfs_state.nchunk, data = {binary, 2, ChunkBin}},
 			gfsflush(P#gfs_state{nchunk = P#gfs_state.nchunk + 1, length = P#gfs_state.length + CSize}, 
 					 Rem, <<Out/binary, (mongodb:encoderec(Chunk))/binary>>);
 		Rem when P#gfs_state.closed == true, byte_size(Rem) > 0 ->
-			Chunk = #gfs_chunk{docid = create_id(), files_id = {oid, FileID}, n = P#gfs_state.nchunk, data = {binary, 2, Rem}},
+			Chunk = #gfs_chunk{docid = {oid,create_id()}, files_id = FileID, n = P#gfs_state.nchunk, data = {binary, 2, Rem}},
 			gfsflush(P#gfs_state{length = P#gfs_state.length + byte_size(Rem)}, 
 			         <<>>, <<Out/binary, (mongodb:encoderec(Chunk))/binary>>);
 		Rem when byte_size(Out) > 0 ->
@@ -678,11 +683,11 @@ gfsflush(P, Bin, Out) ->
 			exec_insert(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".chunks">>, #insert{documents = Out}),
 			case P#gfs_state.closed of
 				true ->
-					[{<<"md5">>, MD5}|_] = exec_cmd(P#gfs_state.pool,P#gfs_state.db, [{<<"filemd5">>, {oid, FileID}},{<<"root">>, P#gfs_state.collection}]);
+					[{<<"md5">>, MD5}|_] = exec_cmd(P#gfs_state.pool,P#gfs_state.db, [{<<"filemd5">>, FileID},{<<"root">>, P#gfs_state.collection}]);
 				false ->
 					MD5 = undefined
 			end,
-			exec_update(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".files">>, #update{selector = mongodb:encode([{<<"_id">>, {oid, FileID}}]), 
+			exec_update(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".files">>, #update{selector = mongodb:encode([{<<"_id">>, FileID}]), 
 																		document = mongodb:encoderec(File#gfs_file{length = P#gfs_state.length,
 																		                                           md5 = MD5})}),
 			gfsflush(P, Rem, <<>>);
@@ -770,6 +775,7 @@ connection(P, Buf) ->
 	% io:format("receiving~n"),
 	receive
 		{tcp, _, Bin} when Buf == <<>> ->
+			% io:format("Received size ~p~n", [byte_size(Bin)]),
 			<<Size:32/little, Rem/binary>> = Bin,
 			case true of
 				_ when byte_size(Rem) >= Size-4 ->
@@ -779,7 +785,7 @@ connection(P, Buf) ->
 					connection(P#con{size = Size - 4}, Rem)
 			end;
 		{tcp, _, Bin} ->
-			% io:format("Received size ~p~n", [Size]),
+			% io:format("Received size ~p~n", [byte_size(Bin)]),
 			case true of
 				 _ when byte_size(Buf) + byte_size(Bin) >= P#con.size ->
 					P#con.source ! {query_result, self(), <<Buf/binary, Bin/binary>>},
@@ -997,6 +1003,7 @@ gen_keyname([{KeyIndex, KeyVal}|Keys], [Field|Fields], KeyIndex, Name) ->
 gen_keyname([], _, _, <<"_", Name/binary>>) ->
 	Name;
 gen_keyname(Keys, [_|Fields], KeyIndex, Name) ->
+	[{I,_}|_] = Keys,
 	gen_keyname(Keys, Fields, KeyIndex+1, Name).
 	
 
