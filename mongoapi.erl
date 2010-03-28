@@ -78,6 +78,8 @@ save(Rec) ->
 %  update([{#mydoc.name, "docname"}], #mydoc{tags = {push, "lamer"}}, [])
 %  update([{#mydoc.name, "docname"}], #mydoc{tags = {pushAll, ["dumbass","jackass"]}}, [upsert])
 %  update([{#mydoc.name, "docname"}], #mydoc{tags = {pullAll, ["dumbass","jackass"]}}, [upsert])
+%  update([{#mydoc.name,"ime"}],#mydoc{i = {addToSet,{array,[1,2,3,4]}}},[upsert])
+%  update([{#mydoc.name,"ime"}],#mydoc{i = {addToSet,10}}},[upsert]).
 %  and so on. 
 % modifier list: inc, set, push, pushAll, pop, pull, pullAll
 % Flags can be: [upsert,multi]

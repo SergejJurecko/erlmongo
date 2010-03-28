@@ -1169,6 +1169,8 @@ encode_element({Name, {inc, Val}}) ->
 	encode_element({<<"$inc">>, [{Name, Val}]});
 encode_element({Name, {set, Val}}) ->
 	encode_element({<<"$set">>, [{Name, Val}]});
+encode_element({Name, {unset, Val}}) ->
+	encode_element({<<"$unset">>, [{Name, Val}]});
 encode_element({Name, {push, Val}}) ->
 	encode_element({<<"$push">>, [{Name, Val}]});
 encode_element({Name, {pushAll, Val}}) ->
@@ -1179,6 +1181,10 @@ encode_element({Name, {pull, Val}}) ->
 	encode_element({<<"$pull">>, [{Name, Val}]});
 encode_element({Name, {pullAll, Val}}) ->
 	encode_element({<<"$pullAll">>, [{Name, {array, Val}}]});
+encode_element({Name, {addToSet, {array,Val}}}) ->
+	encode_element({<<"$addToSet">>, [{Name, [{<<"$each">>, {array, Val}}]}]});
+encode_element({Name, {addToSet, Val}}) ->
+	encode_element({<<"$addToSet">>, [{Name, Val}]});
 encode_element({Name, {gt, Val}}) ->
 	encode_element({Name, [{<<"$gt">>, Val}]});
 encode_element({Name, {lt, Val}}) ->
