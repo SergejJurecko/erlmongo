@@ -2,7 +2,7 @@
 -export([deser_prop/1,reload/0, print_info/0, start/0, stop/0, init/1, handle_call/3, 
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 % API
--export([connect/1, connect/2, is_connected/1, singleServer/2, singleServer/1, masterSlave/3,masterMaster/3, replicaPairs/3, 
+-export([connect/1, connect/2, is_connected/1,deleteConnection/1, singleServer/2, singleServer/1, masterSlave/3,masterMaster/3, replicaPairs/3, 
 		 datetime_to_now/1]).
 % Internal
 -export([exec_cursor/3, exec_delete/3, exec_cmd/3, exec_insert/3, exec_find/3, exec_update/3, exec_getmore/3,  
@@ -80,6 +80,9 @@ connect(Pool) ->
 connect(Pool, Callback) when is_pid(Callback); is_tuple(Callback), tuple_size(Callback) == 3 ->
 	gen_server:cast(?MODULE, {start_connection, Pool, Callback}).
 
+deleteConnection(Pool) ->
+	gen_server:cast(?MODULE,{delete_connection,Pool}).
+
 is_connected(Pool) ->
 	case gen_server:call(?MODULE, {getread,Pool}) of
 		undefined ->
@@ -89,11 +92,12 @@ is_connected(Pool) ->
 	end.	
 	
 singleServer(Pool) ->
-	gen_server:cast(?MODULE, {conninfo,Pool, {replicaPairs, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
+	% gen_server:cast(?MODULE, {conninfo,Pool, {replicaPairs, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
+	gen_server:cast(?MODULE, {conninfo,Pool, {masterSlave, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
 singleServer(Pool,Addr) ->
 	[IP,Port] = string:tokens(Addr,":"),
 	% gen_server:cast(?MODULE, {conninfo, {single, {Addr,Port}}}).
-	gen_server:cast(?MODULE, {conninfo,Pool, {replicaPairs, {IP,Port}, {IP,Port}}}).
+	gen_server:cast(?MODULE, {conninfo,Pool, {masterSlave, {IP,Port}, {IP,Port}}}).
 masterSlave(Pool,MasterAddr, SlaveAddr) ->
 	[IP1,Port1] = string:tokens(MasterAddr,":"),
 	[IP2,Port2] = string:tokens(SlaveAddr,":"),
@@ -117,14 +121,10 @@ clearIndexCache() ->
 	gen_server:cast(?MODULE, {clear_indexcache}).
 
 exec_cursor(Pool,Col, Quer) ->
-	case gen_server:call(?MODULE, {getread,Pool}) of
-		undefined ->
-			not_connected;
-		PID ->
-			PID ! {find, self(), Col, Quer},
+	case trysend(Pool,{find, self(), Col, Quer},1) of
+		ok ->
 			receive
-				{query_result, _Src, <<_ReqID:32/little, _RespTo:32/little, 1:32/little, 0:32, 
-								 CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+				{query_result, _Src, <<CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
 					% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
 					% io:format("~p~n", [Result]),
 					case CursorID of
@@ -137,21 +137,19 @@ exec_cursor(Pool,Col, Quer) ->
 					end
 				after 5000 ->
 					not_connected
-			end
+			end;
+		X ->
+			X
 	end.
 exec_getmore(Pool,Col, C) ->
 	case erlang:is_process_alive(C#cursor.pid) of
 		false ->
 			{done, <<>>};
 		true ->			
-			case gen_server:call(?MODULE, {getread,Pool}) of
-				undefined ->
-					not_connected;
-				PID ->
-					PID ! {getmore, self(), Col, C},
+			case trysend(Pool,{getmore, self(), Col, C},1) of
+				ok ->
 					receive
-						{query_result, _Src, <<_ReqID:32/little, _RespTo:32/little, 1:32/little, 0:32, 
-										 CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+						{query_result, _Src, <<CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
 							% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
 							% io:format("~p~n", [Result]),
 							case CursorID of
@@ -163,53 +161,55 @@ exec_getmore(Pool,Col, C) ->
 							end
 						after 5000 ->
 							{done, <<>>}
-					end
+					end;
+				X ->
+					X
 			end
 	end.
 exec_delete(Pool,Collection, D) ->
-	case gen_server:call(?MODULE, {getwrite,Pool}) of
-		undefined ->
-			not_connected;
-		PID ->
-			PID ! {delete, Collection, D},
-			ok
-	end.
+	% case gen_server:call(?MODULE, {getwrite,Pool}) of
+	% 	undefined ->
+	% 		not_connected;
+	% 	PID ->
+	% 		PID ! {delete, Collection, D},
+	% 		ok
+	% end.
+	trysend(Pool,{delete,Collection,D},1).
 exec_find(Pool,Collection, Quer) ->
-	case gen_server:call(?MODULE, {getread,Pool}) of
-		undefined ->
-			not_connected;
-		PID ->
-			PID ! {find, self(), Collection, Quer},
+	% case gen_server:call(?MODULE, {getread,Pool}) of
+	case trysend(Pool,{find, self(), Collection, Quer},1) of
+		ok ->
 			receive
-				{query_result, _Src, <<_ReqID:32/little, _RespTo:32/little, 1:32/little, 0:32, 
-								 _CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
-					% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
-					% io:format("~p~n", [Result]),
+				{query_result, _Src, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
 					Result
 				after 20000 ->
 					not_connected
-			end
+			end;
+		X ->
+			X
 	end.
 exec_insert(Pool,Collection, D) ->
-	case gen_server:call(?MODULE, {getwrite,Pool}) of
-		undefined ->
-			not_connected;
-		PID ->
-			PID ! {insert, Collection, D},
-			ok
-	end.
+	% case gen_server:call(?MODULE, {getwrite,Pool}) of
+	% 	undefined ->
+	% 		not_connected;
+	% 	PID ->
+	% 		PID ! {insert, Collection, D},
+	% 		ok
+	% end.
+	trysend(Pool,{insert,Collection,D},1).
 exec_update(Pool,Collection, D) ->
-	case gen_server:call(?MODULE, {getwrite,Pool}) of
-		undefined ->
-			not_connected;
-		PID ->
-			PID ! {update, Collection, D},
-			ok
-	end.
+	% case gen_server:call(?MODULE, {getwrite,Pool}) of
+	% 	undefined ->
+	% 		not_connected;
+	% 	PID ->
+	% 		PID ! {update, Collection, D},
+	% 		ok
+	% end.
+	trysend(Pool,{update,Collection,D},1).
 exec_cmd(Pool,DB, Cmd) ->
 	Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode(Cmd)},
 	case exec_find(Pool,<<DB/binary, ".$cmd">>, Quer) of
-		undefined ->
+		not_connected ->
 			not_connected;
 		<<>> ->
 			[];
@@ -222,6 +222,17 @@ exec_cmd(Pool,DB, Cmd) ->
 			end
 	end.
 
+trysend(_,_,N) when N > 2 ->
+	not_connected;
+trysend(Pool,Query,N) ->
+	case catch Pool ! Query of
+		{'EXIT',_} ->
+			timer:sleep(1000),
+			trysend(Pool,Query,N+1);
+		_ ->
+			ok
+	end.
+		
 create_id() ->
 	dec2hex(<<>>, gen_server:call(?MODULE, {create_oid})).
 
@@ -241,30 +252,17 @@ startgfs(P) ->
 % read = connection used for reading (find) from mongo server
 % write = connection used for writing (insert,update) to mongo server
 %   single: same as replicaPairs (single server is always master and used for read and write)
-%   masterSlave: read = slave, write = master
+%   masterSlave: read = write = master
 %   replicaPairs: read = write = master
-%   masterMaster: read = master1, write = master2
+%   masterMaster: pick one at random
 % timer is reconnect timer if some connection is missing
--record(conn, {read, write, timer, conninfo, cb}).
+-record(conn, {pid, timer, conninfo, cb}).
 % indexes is ensureIndex cache (an ets table).
 -record(mngd, {indexes, hashed_hostn, oid_index = 1}).
 -define(R2P(Record), rec2prop(Record, record_info(fields, mngd))).
 -define(P2R(Prop), prop2rec(Prop, mngd, #mngd{}, record_info(fields, mngd))).	
 	
-handle_call({getread, C}, _, P) ->
-	case get(C) of
-		undefined ->
-			undefined;
-		CC ->
-			{reply, CC#conn.read, P}
-	end;
-handle_call({getwrite, C}, _, P) ->
-	case get(C) of
-		undefined ->
-			undefined;
-		CC ->
-			{reply, CC#conn.write, P}
-	end;
+
 handle_call({create_oid}, _, P) ->
 	WC = element(1,erlang:statistics(wall_clock)) rem 16#ffffffff,
 	% <<_:20/binary,PID:2/binary,_/binary>> = term_to_binary(self()),
@@ -287,6 +285,7 @@ startcon(Name, undefined, Type, Addr, Port) when is_list(Port) ->
 startcon(Name, undefined, Type, Addr, Port) ->
 	PID = spawn_link(fun() -> connection(true) end),
 	put(PID,Name),
+	% register(Name,PID),
 	PID ! {start, Name, self(), Type, Addr, Port};
 startcon(_,PID, _, _, _) ->
 	PID.
@@ -307,11 +306,17 @@ handle_cast({conninfo, Pool, Info}, P) ->
 	case get(Pool) of
 		undefined ->
 			put(Pool,#conn{conninfo = Info});
-		#conn{read = undefined} = _PI ->
+		#conn{pid = undefined} = _PI ->
 			true;
 		PI ->
-			PI#conn.read ! {stop}
+			case PI#conn.conninfo of
+				Info ->
+					true;
+				_ ->
+					PI#conn.pid ! {stop}
+			end
 	end,
+	self() ! {save_connections},
 	{noreply, P};
 handle_cast({start_connection, Pool}, P) ->
 	handle_cast({start_connection,Pool,undefined}, P);
@@ -323,92 +328,61 @@ handle_cast({start_connection, Pool, CB}, P) ->
 			start_connection(Pool, PI#conn{cb = CB})
 	end,
 	{noreply, P};
-	% handle_cast({start_connection}, P#mngd{conn_established_cb = SendBack});
-% handle_cast({start_connection}, #mngd{conninfo = {masterMaster, {A1,P1},{A2,P2}}} = P)  ->
-% 	case true of
-% 		_ when P#mngd.read /= P#mngd.write, P#mngd.read /= undefined, P#mngd.write /= undefined ->
-% 			Timer = ctimer(P#mngd.timer);
-% 		_ when P#mngd.read == P#mngd.write, P#mngd.read /= undefined ->
-% 			startcon(undefined, write, A2,P2),
-% 			Timer = P#mngd.timer;
-% 		_ ->
-% 			startcon(P#mngd.read, read, A1,P1),
-% 			startcon(P#mngd.write, write, A2,P2),
-% 			Timer = P#mngd.timer
-% 			% {noreply, P#mngd{read = startcon(P#mngd.read, A1,P1), write = startcon(P#mngd.write,A2,P2)}}
-% 	end,
-% 	{noreply, P#mngd{timer = Timer}};
-% handle_cast({start_connection}, #mngd{conninfo = {masterSlave, {A1,P1},{A2,P2}}} = P)  ->
-% 	case true of
-% 		% All ok.
-% 		_ when P#mngd.read /= P#mngd.write, P#mngd.read /= undefined, P#mngd.write /= undefined ->
-% 			Timer = ctimer(P#mngd.timer);
-% 		% Read = write = master, try to connect to slave again
-% 		_ when P#mngd.read == P#mngd.write, P#mngd.read /= undefined ->
-% 			startcon(undefined, read, A2,P2),
-% 			Timer = P#mngd.timer;
-% 		% One or both of the connections is down
-% 		_ ->
-% 			startcon(P#mngd.read, read, A2,P2),
-% 			startcon(P#mngd.write, write, A1,P1),
-% 			Timer = P#mngd.timer
-% 	end,
-% 	{noreply, P#mngd{timer = Timer}};
-% handle_cast({start_connection}, #mngd{conninfo = {replicaPairs, {A1,P1},{A2,P2}}} = P)  ->
-% 	case true of
-% 		_ when P#mngd.read /= undefined, P#mngd.write == P#mngd.read ->
-% 			{noreply, P#mngd{timer = ctimer(P#mngd.timer)}};
-% 		_ ->
-% 			startcon(undefined, ifmaster, A1,P1),
-% 			startcon(undefined, ifmaster, A2,P2),
-% 			{noreply, P}
-% 	end;
+handle_cast({delete_connection, Pool}, P) ->
+	case get(Pool) of
+		undefined ->
+			true;
+		PI ->
+			case is_pid(PI#conn.pid) of
+				true ->
+					PI#conn.pid ! {stop};
+				_ ->
+					true
+			end
+	end,
+	erase(Pool),
+	self() ! {save_connections},
+	{noreply, P};
 handle_cast({print_info}, P) ->
-	io:format("~p~n~p~n", [get(),?R2P(P)]),
+	io:format("~p ~p~n~p~n", [self(),get(),?R2P(P)]),
 	{noreply, P};
 handle_cast(_, P) ->
 	{noreply, P}.
 
 start_connection(Name, #conn{conninfo = {masterMaster, {A1,P1},{A2,P2}}} = P) ->
-	case true of
-		_ when P#conn.read /= P#conn.write, P#conn.read /= undefined, P#conn.write /= undefined ->
-			Timer = ctimer(P#conn.timer);
-		_ when P#conn.read == P#conn.write, P#conn.read /= undefined ->
-			startcon(Name, undefined, write, A2,P2),
-			Timer = P#conn.timer;
+	case P#conn.pid of
+		undefined ->
+			Timer = P#conn.timer,
+			case random:uniform(2) of
+				1 ->
+					startcon(Name,P#conn.pid,readwrite,A1,P1);
+				2 ->
+					startcon(Name,P#conn.pid,readwrite,A2,P2)
+			end;
 		_ ->
-			startcon(Name, P#conn.read, read, A1,P1),
-			startcon(Name, P#conn.write, write, A2,P2),
-			Timer = P#conn.timer
-			% {noreply, P#mngd{read = startcon(P#mngd.read, A1,P1), write = startcon(P#mngd.write,A2,P2)}}
+			Timer = ctimer(P#conn.timer)
 	end,
 	put(Name,P#conn{timer = Timer});
-start_connection(Name, #conn{conninfo = {masterSlave, {A1,P1},{A2,P2}}} = P)  ->
-	case true of
-		% All ok.
-		_ when P#conn.read /= P#conn.write, P#conn.read /= undefined, P#conn.write /= undefined ->
-			Timer = ctimer(P#conn.timer);
-		% Read = write = master, try to connect to slave again
-		_ when P#conn.read == P#conn.write, P#conn.read /= undefined ->
-			startcon(Name, undefined, read, A2,P2),
-			Timer = P#conn.timer;
-		% One or both of the connections is down
+start_connection(Name, #conn{conninfo = {masterSlave, {A1,P1},{_A2,_P2}}} = P)  ->
+	case P#conn.pid of
+		undefined ->
+			Timer = P#conn.timer,
+			startcon(Name,P#conn.pid,readwrite,A1,P1);
 		_ ->
-			startcon(Name, P#conn.read, read, A2,P2),
-			startcon(Name, P#conn.write, write, A1,P1),
-			Timer = P#conn.timer
+			Timer = ctimer(P#conn.timer)
 	end,
 	put(Name,P#conn{timer = Timer});
 start_connection(Name, #conn{conninfo = {replicaPairs, {A1,P1},{A2,P2}}} = P)  ->
-	case true of
-		_ when P#conn.read /= undefined, P#conn.write == P#conn.read ->
-			put(Name,P#conn{timer = ctimer(P#conn.timer)});
-			% {noreply, P#conn{timer = ctimer(P#conn.timer)}};
-		_ ->
+	case P#conn.pid of
+		undefined ->
+			% io:format("starting~n"),
+			Timer = P#conn.timer,
 			startcon(Name, undefined, ifmaster, A1,P1),
-			startcon(Name, undefined, ifmaster, A2,P2)
+			startcon(Name, undefined, ifmaster, A2,P2);
+		_ ->
+			Timer = ctimer(P#conn.timer)
 	end,
-	put(Name,P);
+	put(Name,P#conn{timer = Timer});
 start_connection(_,_) ->
 	true.
 
@@ -437,74 +411,53 @@ conn_callback(P) ->
 			end
 	end.
 
-handle_info({conn_established, Pool, read, ConnProc}, P) ->
+handle_info({conn_established, Pool, readwrite, ConnProc}, P) ->
 	case get(Pool) of
 		undefined ->
 			true;
 		PI ->
 			put(ConnProc,Pool),
-			put(Pool,PI#conn{read = ConnProc}),
-			conn_callback(PI#conn.cb)
-	end,
-	{noreply, P};
-handle_info({conn_established, Pool, write, ConnProc}, P) ->
-	case get(Pool) of
-		undefined ->
-			true;
-		PI ->
-			put(ConnProc,Pool),
-			put(Pool,PI#conn{write = ConnProc}),
+			put(Pool,PI#conn{pid = ConnProc}),
 			conn_callback(PI#conn.cb)
 	end,
 	{noreply, P};
 handle_info({reconnect, Pool}, P) ->
 	handle_cast({start_connection, Pool}, P);
-handle_info({'EXIT', PID,_W}, P) ->
+handle_info({'EXIT', PID,W}, P) ->
 	% io:format("condied ~p~n", [{PID,_W}]),
 	case get(PID) of
 		undefined ->
 			true;
 		Pool ->
 			erase(PID),
-			conndied(Pool,PID,get(Pool))
+			conndied(Pool,PID,get(Pool)),
+			case W of
+				% Most likely died because of code reload, restart immediately
+				killed ->
+					self() ! {reconnect,Pool};
+				_ ->
+					true
+			end
 	end,
 	{noreply, P};
-% handle_info({'EXIT', PID, _Reason}, #mngd{conninfo = {replicaPairs, _, _}} = P) ->
-% 	case true of
-% 		_ when P#mngd.read == PID; P#mngd.read == undefined ->
-% 			{noreply, P#mngd{read = undefined, write = undefined, timer = timer(P#mngd.timer)}};
-% 		_ ->
-% 			{noreply, P}
-% 	end;
-% handle_info({'EXIT', PID, _Reason}, #mngd{conninfo = {masterSlave, _, _}} = P) ->
-% 	case true of
-% 		_ when P#mngd.read == PID, P#mngd.read /= P#mngd.write ->
-% 			{noreply, P#mngd{read = P#mngd.write, timer = timer(P#mngd.timer)}};
-% 		_ when P#mngd.read == PID ->
-% 			{noreply, P#mngd{read = undefined, write = undefined, timer = timer(P#mngd.timer)}};
-% 		_ when P#mngd.write == PID ->
-% 			{noreply, P#mngd{write = undefined, timer = timer(P#mngd.timer)}};
-% 		_ ->
-% 			{noreply, P}
-% 	end;
-% handle_info({'EXIT', PID, _Reason}, #mngd{conninfo = {masterMaster, _, _}} = P) ->
-% 	case true of
-% 		_ when P#mngd.read == PID, P#mngd.write == PID ->
-% 			{noreply, P#mngd{read = undefined, write = undefined, timer = timer(P#mngd.timer)}};
-% 		_ when P#mngd.read == PID ->
-% 			{noreply, P#mngd{read = P#mngd.write, timer = timer(P#mngd.timer)}};
-% 		_ when P#mngd.write == PID ->
-% 			{noreply, P#mngd{write = P#mngd.read, timer = timer(P#mngd.timer)}};
-% 		_ ->
-% 			{noreply, P}
-% 	end;
-handle_info({query_result, Src, <<_:32/binary, Res/binary>>}, P) ->
+handle_info({save_connections}, P) ->
+	L = lists:foldl(fun({Pool,#conn{} = I},L) ->
+					[{Pool,I#conn.conninfo}|L];
+				   (_,L) ->
+					L
+				   end,[],get()),
+	application:set_env(erlmongo,connections,L),
+	{noreply, P};
+handle_info({query_result, Src, <<_:20/binary, Res/binary>>}, P) ->
 	PI = get(get(Src)),
+	% io:format("~p~n", ["RES"]),
 	try mongodb:decode(Res) of
-		[[{<<"ismaster">>, 1}|_]] when element(1,PI#conn.conninfo) == replicaPairs, PI#conn.read == undefined ->
+		[[{<<"ismaster">>, 1}|_]] when element(1,PI#conn.conninfo) == replicaPairs, PI#conn.pid == undefined ->
 			link(Src),
+			% io:format("~p, registering ~p~n", ["Foundmaster", registered()]),
 			conn_callback(PI#conn.cb),
-			put(get(Src),PI#conn{read = Src, write = Src}),
+			put(get(Src),PI#conn{pid = Src}),
+			register(get(Src),Src),
 			{noreply, P};
 		_X ->
 			% io:format("~p~n", [_X]),
@@ -523,37 +476,9 @@ handle_info(_X, P) ->
 	io:format("~p~n", [_X]),
 	{noreply, P}.
 	
-conndied(Name, PID, #conn{conninfo = {replicaPairs, _, _}} = P) ->
-	case true of
-		_ when P#conn.read == PID; P#conn.read == undefined ->
-			put(Name, P#conn{read = undefined, write = undefined, timer = timer(P#conn.timer, Name)});
-		_ ->
-			true
-	end;
-conndied(Name, PID, #conn{conninfo = {masterSlave, _, _}} = P) ->
-	case true of
-		_ when P#conn.read == PID, P#conn.read /= P#conn.write ->
-			put(Name, P#conn{read = P#conn.write, timer = timer(P#conn.timer, Name)});
-		_ when P#conn.read == PID ->
-			put(Name, P#conn{read = undefined, write = undefined, timer = timer(P#conn.timer, Name)});
-		_ when P#conn.write == PID ->
-			put(Name, P#conn{write = undefined, timer = timer(P#conn.timer, Name)});
-		_ ->
-			true
-	end;
-conndied(Name, PID, #conn{conninfo = {masterMaster, _, _}} = P) ->
-	case true of
-		_ when P#conn.read == PID, P#conn.write == PID ->
-			put(Name, P#conn{read = undefined, write = undefined, timer = timer(P#conn.timer, Name)});
-		_ when P#conn.read == PID ->
-			put(Name, P#conn{read = P#conn.write, timer = timer(P#conn.timer, Name)});
-		_ when P#conn.write == PID ->
-			put(Name, P#conn{write = P#conn.read, timer = timer(P#conn.timer, Name)});
-		_ ->
-			true
-	end;
-conndied(_,_,_) ->
-	true.
+
+conndied(Name,_PID,P) ->
+	put(Name, P#conn{pid = undefined, timer = timer(P#conn.timer, Name)}).
 
 terminate(_, _) ->
 	ok.
@@ -561,6 +486,13 @@ code_change(_, P, _) ->
 	{ok, P}.
 init([]) ->
 	% timer:send_interval(1000, {timeout}),
+	case application:get_env(erlmongo,connections) of
+		{ok, L} ->
+			[gen_server:cast(?MODULE,{conninfo, Pool, Info}) || {Pool,Info} <- L],
+			[connect(Pool) || {Pool,_} <- L];
+		_ ->
+			true
+	end,
 	{ok, HN} = inet:gethostname(),
 	<<HashedHN:3/binary,_/binary>> = erlang:md5(HN),
 	process_flag(trap_exit, true),
@@ -718,42 +650,48 @@ cursorcleanup(P) ->
 	end.
 
 
--record(con, {sock, source, size = 0, state = free}).
+-record(con, {sock}).
+% Proc. d.:
+%   {ReqID, ReplyPID}
 % Waiting for request
 connection(_) ->
-	connection(#con{}, <<>>).
-connection(#con{state = free} = P, <<>>) ->
+	connection(#con{},1,<<>>).
+connection(#con{} = P,Index,Buf) ->
 	receive
 		{find, Source, Collection, Query} ->
-			QBin = constr_query(Query, Collection),
+			% io:format("Q ~p~n", [{get(),Index,Source}]),
+			QBin = constr_query(Query,Index, Collection),
 			ok = gen_tcp:send(P#con.sock, QBin),
-			connection(P#con{state = waiting, source = Source}, <<>>);
+			put(Index,Source),
+			connection(P, Index+1, Buf);
 		{insert, Collection, Doc} ->
 			Bin = constr_insert(Doc, Collection),
 			ok = gen_tcp:send(P#con.sock, Bin),
-			connection(P, <<>>);
+			connection(P, Index,Buf);
 		{update, Collection, #update{} = Doc} ->
 			Bin = constr_update(Doc, Collection),
 			ok = gen_tcp:send(P#con.sock, Bin),
-			connection(P, <<>>);
+			connection(P,Index, Buf);
 		{update, Collection, [_|_] = Doc} ->
 			Bin = lists:foldl(fun(D,B) -> <<B/binary,(constr_update(D, Collection))/binary>> end, <<>>,Doc),
 			ok = gen_tcp:send(P#con.sock, Bin),
-			connection(P,<<>>);
+			connection(P,Index, Buf);
 		{delete, Col, D} ->
 			Bin = constr_delete(D, Col),
 			ok = gen_tcp:send(P#con.sock, Bin),
-			connection(P, <<>>);
+			connection(P,Index, Buf);
 		{getmore, Source, Col, C} ->
-			Bin = constr_getmore(C, Col),
+			Bin = constr_getmore(C, Index, Col),
 			ok = gen_tcp:send(P#con.sock, Bin),
-			connection(P#con{state = waiting, source = Source}, <<>>);
+			put(Index,Source),
+			connection(P,Index+1, Buf);
 		{killcursor, C} ->
 			Bin = constr_killcursors(C),
 			ok = gen_tcp:send(P#con.sock, Bin),
-			connection(P, <<>>);
-		{tcp, _, _Bin} ->
-			connection(P, <<>>);
+			connection(P,Index, Buf);
+		{tcp, _, Bin} ->
+			% io:format("~p~n", [{byte_size(Bin), Buf}]),
+			connection(P,Index,readpacket(<<Buf/binary,Bin/binary>>));
 		{stop} ->
 			true;
 		{start, Pool, Source, Type, IP, Port} ->
@@ -764,76 +702,69 @@ connection(#con{state = free} = P, <<>>) ->
 				ifmaster ->
 					self() ! {find, Source, <<"admin.$cmd">>, #search{nskip = 0, ndocs = 1, criteria = mongodb:encode([{<<"ismaster">>, 1}])}};
 				_ ->
+					register(Pool,self()),
 					Source ! {conn_established, Pool, Type, self()}
 			end,
-			connection(#con{sock = Sock}, <<>>);
+			connection(#con{sock = Sock},1, <<>>);
 		{tcp_closed, _} ->
-			exit(stop)
-	end;
-% waiting for response
-connection(P, Buf) ->
-	% io:format("receiving~n"),
-	receive
-		{tcp, _, Bin} when Buf == <<>> ->
-			% io:format("Received size ~p~n", [byte_size(Bin)]),
-			<<Size:32/little, Rem/binary>> = Bin,
-			case true of
-				_ when byte_size(Rem) >= Size-4 ->
-					P#con.source ! {query_result, self(), Rem},
-					connection(P#con{state = free}, <<>>);
-				_ ->
-					connection(P#con{size = Size - 4}, Rem)
-			end;
-		{tcp, _, Bin} ->
-			% io:format("Received size ~p~n", [byte_size(Bin)]),
-			case true of
-				 _ when byte_size(Buf) + byte_size(Bin) >= P#con.size ->
-					P#con.source ! {query_result, self(), <<Buf/binary, Bin/binary>>},
-					connection(P#con{state = free}, <<>>);
-				_ ->
-					connection(P, <<Buf/binary, Bin/binary>>)
-			end;
-		{stop} ->
-			true;
-		{tcp_closed, _} ->
-			exit(stop)
-		after 20000 ->
 			exit(stop)
 	end.
+readpacket(Bin) ->
+	<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/little, Body/binary>> = Bin,
+	BodySize = ComplSize-16,
+	case Body of
+		<<Packet:BodySize/binary,Rem/binary>> ->
+			case is_pid(get(RespID)) of
+				true ->
+					get(RespID) ! {query_result, self(), Packet},
+					erase(RespID);
+				false ->
+					true
+			end,
+			case Rem of
+				<<>> ->
+					<<>>;
+				_ ->
+					readpacket(Rem)
+			end;
+		_ ->
+			Bin
+	end.
 
+	
 constr_header(Len, ID, RespTo, OP) ->
 	<<(Len+16):32/little, ID:32/little, RespTo:32/little, OP:32/little>>.
 
 constr_update(U, Name) ->
 	Update = <<0:32, Name/binary, 0:8, 
 	           (U#update.upsert):32/little, (U#update.selector)/binary, (U#update.document)/binary>>,
-	Header = constr_header(byte_size(Update), random:uniform(4000000000), 0, ?OP_UPDATE),
+	Header = constr_header(byte_size(Update), 0, 0, ?OP_UPDATE),
 	<<Header/binary, Update/binary>>.
 
 constr_insert(U, Name) ->
 	Insert = <<0:32, Name/binary, 0:8, (U#insert.documents)/binary>>,
-	Header = constr_header(byte_size(Insert), random:uniform(4000000000), 0, ?OP_INSERT),
+	Header = constr_header(byte_size(Insert), 0, 0, ?OP_INSERT),
 	<<Header/binary, Insert/binary>>.
 
-constr_query(U, Name) ->
+constr_query(U, Index, Name) ->
 	Query = <<(U#search.opts):32/little, Name/binary, 0:8, (U#search.nskip):32/little, (U#search.ndocs):32/little, 
 	  		  (U#search.criteria)/binary, (U#search.field_selector)/binary>>,
-	Header = constr_header(byte_size(Query), random:uniform(4000000000), 0, ?OP_QUERY),
+	Header = constr_header(byte_size(Query), Index, 0, ?OP_QUERY),
 	<<Header/binary,Query/binary>>.
 
-constr_getmore(U, Name) ->
+constr_getmore(U, Index, Name) ->
 	GetMore = <<0:32, Name/binary, 0:8, (U#cursor.limit):32/little, (U#cursor.id):64/little>>,
-	Header = constr_header(byte_size(GetMore), random:uniform(4000000000), 0, ?OP_GET_MORE),
+	Header = constr_header(byte_size(GetMore), Index, 0, ?OP_GET_MORE),
 	<<Header/binary, GetMore/binary>>.
 
 constr_delete(U, Name) ->
 	Delete = <<0:32, Name/binary, 0:8, 0:32, (U#delete.selector)/binary>>,
-	Header = constr_header(byte_size(Delete), random:uniform(4000000000), 0, ?OP_DELETE),
+	Header = constr_header(byte_size(Delete), 0, 0, ?OP_DELETE),
 	<<Header/binary, Delete/binary>>.
 	
 constr_killcursors(U) ->
 	Kill = <<0:32, (byte_size(U#killc.cur_ids) div 8):32/little, (U#killc.cur_ids)/binary>>,
-	Header = constr_header(byte_size(Kill), random:uniform(4000000000), 0, ?OP_KILL_CURSORS),
+	Header = constr_header(byte_size(Kill), 0, 0, ?OP_KILL_CURSORS),
 	<<Header/binary, Kill/binary>>.
 
 
@@ -1003,7 +934,7 @@ gen_keyname([{KeyIndex, KeyVal}|Keys], [Field|Fields], KeyIndex, Name) ->
 gen_keyname([], _, _, <<"_", Name/binary>>) ->
 	Name;
 gen_keyname(Keys, [_|Fields], KeyIndex, Name) ->
-	[{I,_}|_] = Keys,
+	% [{I,_}|_] = Keys,
 	gen_keyname(Keys, Fields, KeyIndex+1, Name).
 	
 

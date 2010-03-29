@@ -15,6 +15,15 @@ For instance:
   % This will NOT work
   Mong:findOne(#mydoc{i = 10}, [#mydoc.i, #mydoc.name]).
 
+Connections are always single:
+- master/slave - read and write from master
+- master/master - pick a master at random and use it for everything
+- replica pairs - find out which is master and connect to it
+If your usage pattern is read heavy and want to use slaves for reading, connect to them with singleServer call. Don't write to slave connections or bad things will happen. 
+Always use an atom for naming connections. The connection process will register itself on that name.
+Connection info is saved in an application variable (erlmongo,connections) and updated with every call to: singleServer, masterSlave, replicaPairs, masterMaster and deleteConnection. If mongodb process crashes for some reason, connections will be restarted. Also if the application itself is stopped and started. You can add a connections variable to erlmongo.app file:
+  % def is name of connection, types can be: masterSlave,masterMaster or replicaPairs. This is how singleServer info is saved:
+  {env, [{def,{masterSlave,{"localhost",27017},{"localhost",27017}}}]},
 
 = Examples
   make
