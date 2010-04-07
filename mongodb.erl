@@ -84,12 +84,7 @@ deleteConnection(Pool) ->
 	gen_server:cast(?MODULE,{delete_connection,Pool}).
 
 is_connected(Pool) ->
-	case gen_server:call(?MODULE, {getread,Pool}) of
-		undefined ->
-			false;
-		_ ->
-			true
-	end.	
+	gen_server:call(?MODULE, {is_connected,Pool}).
 	
 singleServer(Pool) ->
 	% gen_server:cast(?MODULE, {conninfo,Pool, {replicaPairs, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
@@ -268,6 +263,13 @@ handle_call({create_oid}, _, P) ->
 	% <<_:20/binary,PID:2/binary,_/binary>> = term_to_binary(self()),
 	N = P#mngd.oid_index rem 16#ffffff,
 	{reply, <<WC:32, (P#mngd.hashed_hostn)/binary, (list_to_integer(os:getpid())):16, N:24>>, P#mngd{oid_index = P#mngd.oid_index + 1}};
+handle_call({is_connected,Name}, _, P) ->
+	case get(Name) of
+		X when is_pid(X#conn.pid) ->
+			{reply, true, P};
+		_X ->
+			{reply, false, P}
+	end;
 handle_call(stop, _, P) ->
 	{stop, shutdown, stopped, P};
 handle_call({reload_module}, _, P) ->
