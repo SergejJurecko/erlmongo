@@ -1167,6 +1167,8 @@ encode_element({Name, {ref, Collection, <<First:8/little-binary-unit:8, Second:4
 encode_element({Name, {code, Code}}) ->
   CodeEncoded = encode_cstring(Code),
   <<13, Name/binary, 0, (byte_size(CodeEncoded)):32/little-signed, CodeEncoded/binary>>;
+encode_element({Name,{bignum,Value}}) ->
+	<<18, Name/binary, 0, Value:64/little-signed>>;
 % code with scope
 encode_element({Name, {code, C, S}}) ->
 	Code = encode_cstring(C),
