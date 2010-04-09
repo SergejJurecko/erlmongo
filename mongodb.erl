@@ -1135,6 +1135,8 @@ encode_element({Name, {all, Val}}) ->
 	encode_element({Name, [{<<"$all">>, {array, Val}}]});
 encode_element({Name, {size, Val}}) ->
 	encode_element({Name, [{<<"$size">>, Val}]});
+encode_element({Name, {'not', Val}}) ->
+	encode_element({Name, [{<<"$not">>, Val}]});
 encode_element({Name, {exists, Val}}) ->
 	encode_element({Name, [{<<"$exists">>, Val}]});
 encode_element({Name, {binary, SubType, Data}}) ->

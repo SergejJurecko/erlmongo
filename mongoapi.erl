@@ -139,7 +139,7 @@ batchInsert(LRecs) ->
 %  Documents with i between 2 and 5: Mong:find(#mydoc{i = {in, {gt, 2}, {lt, 5}}}, undefined, 0,0).
 %  in example:     Mong:find(#mydoc{tags = {in, [2,3,4]}}, undefined, 0,0).
 %  exists example: Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
-%  Advanced query options: gt,lt,gte,lte, ne, in, nin, all, size, exists
+%  Advanced query options: gt,lt,gte,lte, ne, in, nin, all, size, exists,'not'
 %  Possible regex options: "ilmsux" -> IN THIS SEQUENCE! (not all are necessary of course)
 % 	i 	 case-insensitive matching
 %	m 	multiline: "^" and "$" match the beginning / end of each line as well as the whole string
