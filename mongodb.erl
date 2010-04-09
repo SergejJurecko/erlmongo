@@ -119,14 +119,14 @@ exec_cursor(Pool,Col, Quer) ->
 	case trysend(Pool,{find, self(), Col, Quer},1) of
 		ok ->
 			receive
-				{query_result, _Src, <<CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+				{query_result, _Src, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
 					% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
 					% io:format("~p~n", [Result]),
 					case CursorID of
 						0 ->
 							{done, Result};
 						_ ->
-							PIDcl = spawn_link(fun() -> cursorcleanup(true) end),
+							PIDcl = spawn_link(fun() -> cursorcleanup(Pool) end),
 							PIDcl ! {start, CursorID},
 							{#cursor{id = CursorID, limit = Quer#search.ndocs, pid = PIDcl}, Result}
 					end
@@ -144,7 +144,7 @@ exec_getmore(Pool,Col, C) ->
 			case trysend(Pool,{getmore, self(), Col, C},1) of
 				ok ->
 					receive
-						{query_result, _Src, <<CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+						{query_result, _Src, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
 							% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
 							% io:format("~p~n", [Result]),
 							case CursorID of
@@ -629,26 +629,20 @@ gfsflush(P, Bin, Out) ->
 			P
 	end.
 	
--record(ccd, {cursor = 0}).
+-record(ccd, {conn,cursor = 0}).
 % Just for cleanup
 cursorcleanup(P) ->
 	receive
 		{stop} ->
 			true;
 		{cleanup} ->
-			case gen_server:call(?MODULE, {getread}) of
-				false ->
-					false;
-				PID ->
-					PID ! {killcursor, #killc{cur_ids = <<(P#ccd.cursor):64/little>>}},
-					true
-			end;
+			P#ccd.conn ! {killcursor, #killc{cur_ids = <<(P#ccd.cursor):64/little>>}};
 		{'EXIT', _PID, _Why} ->
 			self() ! {cleanup},
 			cursorcleanup(P);
 		{start, Cursor} ->
 			process_flag(trap_exit, true),
-			cursorcleanup(#ccd{cursor = Cursor})
+			cursorcleanup(#ccd{conn = P,cursor = Cursor})
 	end.
 
 
@@ -1219,7 +1213,7 @@ decode_next(<<Type:8/little, Rest/binary>>, Accum) ->
   	{Value, Next} = decode_value(Type, EncodedValue),
   	decode_next(Next, [{Name, Value}|Accum]).
 
-decode_cstring(<<>> = _Binary, _Accum) ->
+decode_cstring(<<>>, _) ->
 	throw({invalid_cstring});
 decode_cstring(<<0:8, Rest/binary>>, Acc) ->
 	{Acc, Rest};
