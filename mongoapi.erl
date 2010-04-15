@@ -139,7 +139,7 @@ batchInsert(LRecs) ->
 %  Documents with i between 2 and 5: Mong:find(#mydoc{i = {in, {gt, 2}, {lt, 5}}}, undefined, 0,0).
 %  in example:     Mong:find(#mydoc{tags = {in, [2,3,4]}}, undefined, 0,0).
 %  exists example: Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
-%  Advanced query options: gt,lt,gte,lte, ne, in, nin, all, size, exists,'not'
+%  Advanced query operators: gt,lt,gte,lte, ne, in, nin, all, size, exists,'not'
 %  Possible regex options: "ilmsux" -> IN THIS SEQUENCE! (not all are necessary of course)
 % 	i 	 case-insensitive matching
 %	m 	multiline: "^" and "$" match the beginning / end of each line as well as the whole string
@@ -492,8 +492,8 @@ gfsOpen(R) ->
 gfsOpen([_|_] = Col, R) ->
 	gfsOpen(list_to_binary(Col),R);
 gfsOpen(Collection, R) ->
-	case R#gfs_file.docid of
-		undefined ->			
+	case true of
+		_ when R#gfs_file.docid == undefined; R#gfs_file.length == undefined; R#gfs_file.md5 == undefined ->			
 			Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode_findrec(R)},
 			case mongodb:exec_find(Pool,name(<<Collection/binary, ".files">>), Quer) of
 				not_connected ->
