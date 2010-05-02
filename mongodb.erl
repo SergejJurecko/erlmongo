@@ -315,6 +315,7 @@ handle_cast({conninfo, Pool, Info}, P) ->
 				Info ->
 					true;
 				_ ->
+					put(Pool,#conn{conninfo = Info}),
 					PI#conn.pid ! {stop}
 			end
 	end,
