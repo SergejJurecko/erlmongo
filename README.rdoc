@@ -15,13 +15,21 @@ For instance:
   % This will NOT work
   Mong:findOne(#mydoc{i = 10}, [#mydoc.i, #mydoc.name]).
 
+WARNING: If you use modifier updates with {set,Value} ($set), do not use records. Mongo changes the document element sequence and this messes up record serialization.
+
 Connections are always single:
 - master/slave - read and write from master
 - master/master - pick a master at random and use it for everything
 - replica pairs - find out which is master and connect to it
 If your usage pattern is read heavy and want to use slaves for reading, connect to them with singleServer call. Don't write to slave connections or bad things will happen.
 
-Always use an atom for naming connections. The connection process will register itself on that name.
+Always use an atom for naming connections. The connection process will register itself on that name. 
+Runtime connection API:
+mongodb:singleServer/1
+mongodb:singleServer/2
+mongodb:replicaPairs/3
+mongodb:masterSlave/3
+mongodb:connect/1
 
 Connection info is saved in an application variable (erlmongo,connections) and updated with every call to: singleServer, masterSlave, replicaPairs, masterMaster and deleteConnection. If mongodb process crashes for some reason, connections will be restarted. Also if the application itself is stopped and started. You can add a connections variable to erlmongo.app file:
   % def is name of connection, types can be: masterSlave,masterMaster or replicaPairs. This is how singleServer info is saved:

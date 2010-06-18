@@ -1093,6 +1093,9 @@ encode_element({Name, {bson, Bin}}) ->
 	<<3, Name/binary, 0, Bin/binary>>;
 encode_element({Name, {binary, 2, Data}}) ->
   	<<5, Name/binary, 0, (byte_size(Data)+4):32/little-signed, 2:8, (byte_size(Data)):32/little-signed, Data/binary>>;
+encode_element({Name,{struct,Items}}) ->
+	Binary = encode(Items),
+	<<3, Name/binary, 0, Binary/binary>>;
 encode_element({Name, {inc, Val}}) ->
 	encode_element({<<"$inc">>, [{Name, Val}]});
 encode_element({Name, {set, Val}}) ->
