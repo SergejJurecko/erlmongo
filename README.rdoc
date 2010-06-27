@@ -91,6 +91,9 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   % exists example: 
   Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
 
+  % findandmodify command
+  Mong:runCmd([{"findandmodify", "collectionname"},{"query", [{"fn","onmeta.flv"},{"ch","somechan"}]},{"remove",1}]).
+
   % GridFS
   {ok, Bin} = file:read_file("SomeFile").
   % To open file for writing, use gfsNew
@@ -106,6 +109,9 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   PID = Mong:gfsOpen(#gfs_file{filename = "myfile"}).
   Res = Mong:gfsRead(PID,100000).
   Mong:gfsClose(PID).
+
+= Supported Data types and modifiers
+Look at mongodb:encode_element/1 
 
 == Supported operation list
 Collections
