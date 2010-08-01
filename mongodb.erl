@@ -829,7 +829,7 @@ encoderec(NameRec, Type, Rec, [{FieldName, _RecIndex}|T], N, Bin) ->
 				_ ->
 					Dom = <<NameRec/binary, ".", (atom_to_binary(FieldName, latin1))/binary>>
 			end,
-			encoderec(NameRec, Type, Rec, T, N+1, <<Bin/binary, (encoderec(Dom, flat, SubRec, SubFields, 3, <<>>))/binary>>);
+			encoderec(NameRec, Type, Rec, T, N+1, <<Bin/binary, (encoderec(Dom, flat, SubRec, SubFields, recoffset(FieldName), <<>>))/binary>>);
 		Val ->
 			encoderec(NameRec, Type, Rec, T, N+1, <<Bin/binary, (encode_element({atom_to_binary(FieldName, latin1), {bson, encoderec(Val)}}))/binary>>)
 	end;
@@ -840,11 +840,17 @@ encoderec(NameRec, Type, Rec, [FieldName|T], N, Bin) ->
 		Val ->
 			case FieldName of
 				docid ->
+					case NameRec of
+						<<>> ->
+							Dom = <<"_id">>;
+						_ ->
+							Dom = <<NameRec/binary, "._id">>
+					end,
 					case Val of
 						{oid, _} ->
-							encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({<<"_id">>, {oid, Val}}))/binary>>);
+							encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({Dom, {oid, Val}}))/binary>>);
 						_ ->
-							encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({<<"_id">>, Val}))/binary>>)
+							encoderec(NameRec, Type,Rec, T, N+1, <<Bin/binary, (encode_element({Dom, Val}))/binary>>)
 					end;
 				_ ->
 					case NameRec of
@@ -859,7 +865,6 @@ encoderec(NameRec, Type, Rec, [FieldName|T], N, Bin) ->
 encoderec(<<>>,_,_, [], _, Bin) ->
 	<<(byte_size(Bin)+5):32/little, Bin/binary, 0:8>>;
 encoderec(_,_,_, [], _, Bin) ->
-	% <<(byte_size(Bin)+5):32/little, Bin/binary, 0:8>>.
 	Bin.
 
 encoderec_selector(_, undefined) ->
