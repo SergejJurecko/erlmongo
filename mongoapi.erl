@@ -225,7 +225,7 @@ find(Query, Selector, From, Limit) ->
 findOpt(Col, Query, Selector, Opts, From, Limit) when is_list(Query) ->
 	case Query of
 		[] ->
-			{_,Q} = translateopts(false,undefined, Opts,[{<<"query">>, {bson,<<>>}}]);
+			{_,Q} = translateopts(false,undefined, Opts,[{<<"query">>, {bson,mongodb:encode([])}}]);
 		_ ->
 			{_,Q} = translateopts(false,undefined, Opts,[{<<"query">>, Query}])
 	end,
