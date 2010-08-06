@@ -223,7 +223,12 @@ find(Query, Selector, From, Limit) ->
 % SortBy: {key, Val} or a list of keyval tuples -> {i,1}  (1 = ascending, -1 = descending)
 % Hint: [{Key,Val}] -> [{#mydoc.i,1}]
 findOpt(Col, Query, Selector, Opts, From, Limit) when is_list(Query) ->
-	{_,Q} = translateopts(false,undefined, Opts,[{<<"query">>, Query}]),
+	case Query of
+		[] ->
+			{_,Q} = translateopts(false,undefined, Opts,[{<<"query">>, {bson,<<>>}}]);
+		_ ->
+			{_,Q} = translateopts(false,undefined, Opts,[{<<"query">>, Query}])
+	end,
 	find(Col, Q, Selector, From, Limit);
 % SortBy examples: {#mydoc.name, 1}, [{#mydoc.i, 1},{#mydoc.name,-1}]
 % Hint example: #mydoc.name
