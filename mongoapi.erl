@@ -454,6 +454,9 @@ setProfilingLevel(L) when is_integer(L) ->
 getProfilingLevel() ->
 	runCmd([{"profile", -1}]).
 
+% 
+%  Run this before writing any files, or writing will fail!
+% 
 gfsIndexes() ->
 	gfsIndexes(<<"fd">>).
 gfsIndexes(Collection) ->
@@ -558,6 +561,7 @@ testw(Mong, Filename) ->
 			%  Both calls will complete before gfs gets the chance to set trap_exit to true and detect
 			%  the caller has died.
 			{ok,Bin} = file:read_file(Filename),
+			Mong:gfsIndexes(),
 			PID = Mong:gfsNew(Filename),
 			Mong:gfsWrite(PID,Bin),
 			Mong:gfsClose(PID)

@@ -94,6 +94,8 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   Mong:runCmd([{"findandmodify", "collectionname"},{"query", [{"fn","onmeta.flv"},{"ch","somechan"}]},{"remove",1}]).
 
   % GridFS
+  % Always run this on collection before writing the first file
+  Mong:gfsIndexes().
   {ok, Bin} = file:read_file("SomeFile").
   % To open file for writing, use gfsNew
   PID = Mong:gfsNew("myfile").
@@ -145,6 +147,7 @@ DB
 * getProfilingLevel
 
 GridFS
+* gdsIndexes
 * gfsNew
 * gfsWrite
 * gfsOpen
