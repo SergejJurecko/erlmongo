@@ -454,6 +454,11 @@ setProfilingLevel(L) when is_integer(L) ->
 getProfilingLevel() ->
 	runCmd([{"profile", -1}]).
 
+gfsIndexes() ->
+	gfsIndexes(<<"fd">>).
+gfsIndexes(Collection) ->
+	ensureIndex(<<Collection/binary,".chunks">>,[{<<"files_id">>,1},{<<"n">>,1}]),
+	ensureIndex(<<Collection/binary,".files">>,[{<<"filename">>,1}]).
 
 gfsNew(Filename) ->
 	gfsNew(<<"fd">>, Filename, []).
@@ -464,7 +469,7 @@ gfsNew([_|_] = Collection, Filename, Opts) ->
 gfsNew(<<_/binary>> = Collection, Filename, Opts) ->
 	mongodb:startgfs(gfsopts(Opts,#gfs_state{pool = Pool,file = #gfs_file{filename = Filename, length = 0, chunkSize = 262144,
 															  docid = {oid,mongodb:create_id()}, uploadDate = now()},
-	 										 collection = name(Collection), db = DB, mode = write})).
+	 										 collection = name(Collection), coll_name = Collection, db = DB, mode = write})).
 	
 gfsopts([{meta, Rec}|T], S) ->
 	gfsopts(T, S#gfs_state{file = (S#gfs_state.file)#gfs_file{metadata = Rec}});
@@ -510,7 +515,7 @@ gfsOpen(Collection, R) ->
 					gfsOpen(Collection,DR)
 			end;
 		_ ->
-			mongodb:startgfs(#gfs_state{pool = Pool,file = R, collection = name(Collection), db = DB, mode = read})
+			mongodb:startgfs(#gfs_state{pool = Pool,file = R, coll_name = Collection, collection = name(Collection), db = DB, mode = read})
 	end.
 
 gfsRead(PID, N)	->

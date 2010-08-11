@@ -17,7 +17,7 @@
 				   record_info(fields, gfs_file),
 				   record_info(fields, gfs_chunk)}).
 
--record(gfs_state,{pool,proc, db, file, collection, length = 0, mode, 
+-record(gfs_state,{pool,proc, db, file, collection, coll_name, length = 0, mode, 
 				   nchunk = 0, flush_limit = 1048576, closed = false}).
 
 -export([rec2prop/2, prop2rec/4]).

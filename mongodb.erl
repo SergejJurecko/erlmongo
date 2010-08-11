@@ -519,6 +519,7 @@ gfs_proc(#gfs_state{mode = write} = P, Buf) ->
 			<<FlushBin:FlSize/binary,Rem/binary>> = Buf,
 			gfs_proc(gfsflush(P, FlushBin, <<>>),Rem);
 		{close} ->
+			io:format("closing~n"),
 			gfsflush(P#gfs_state{closed = true}, Buf, <<>>);
 		{'EXIT',_,_} ->
 			self() ! {close},
@@ -618,7 +619,15 @@ gfsflush(P, Bin, Out) ->
 			exec_insert(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".chunks">>, #insert{documents = Out}),
 			case P#gfs_state.closed of
 				true ->
-					[{<<"md5">>, MD5}|_] = exec_cmd(P#gfs_state.pool,P#gfs_state.db, [{<<"filemd5">>, FileID},{<<"root">>, P#gfs_state.collection}]);
+					MD5Cmd = exec_cmd(P#gfs_state.pool,P#gfs_state.db, [{<<"filemd5">>, FileID},{<<"root">>, P#gfs_state.coll_name}]),
+					case proplists:get_value(<<"md5">>,MD5Cmd) of
+						undefined ->
+							io:format("Md5 cmd failed ~p", [MD5Cmd]),
+							MD5 = undefined,
+							ok;
+						MD5 ->
+							ok
+					end;
 				false ->
 					MD5 = undefined
 			end,
@@ -905,8 +914,10 @@ gen_prop_keyname([{[_|_] = KeyName, KeyVal}|T], Bin) ->
 	gen_prop_keyname([{list_to_binary(KeyName), KeyVal}|T], Bin);
 gen_prop_keyname([{KeyName, KeyVal}|T], Bin) ->
 	case is_integer(KeyVal) of
-		true ->
+		true when T == [] ->
 			Add = <<(list_to_binary(integer_to_list(KeyVal)))/binary>>;
+		true ->
+			Add = <<(list_to_binary(integer_to_list(KeyVal)))/binary,"_">>;
 		false ->
 			Add = <<>>
 	end,
@@ -927,8 +938,10 @@ gen_keyname([{KeyIndex, KeyVal}|Keys], [Field|Fields], KeyIndex, Name) ->
 			true
 	end,
 	case is_integer(KeyVal) of
-		true ->
+		true when Keys == [] ->
 			Add = <<(list_to_binary(integer_to_list(KeyVal)))/binary>>;
+		true ->
+			Add = <<(list_to_binary(integer_to_list(KeyVal)))/binary,"_">>;
 		false ->
 			Add = <<>>
 	end,
