@@ -44,7 +44,14 @@ loop_fields(Tuple, [Field|T], DefRec, Props, N) ->
 	end;
 loop_fields(Tuple, [], _, _, _) ->
 	Tuple.
-	
+
+-ifdef(DEBUG).
+-define(DBG(Format, Args), io:format("L(~p:~p:~p:~p) : "++Format++"~n", [time(),self(),?MODULE,?LINE]++Args)).
+-define(DBG0(Format), io:format("L(~p:~p:~p:~p) : "++Format++"~n", [time(),self(),?MODULE,?LINE])).
+-else.
+-define(DBG(F,A),[]).
+-define(DBG0(F),[]).
+-endif.
 	
 % mongo	
 -define(QUER_OPT_NONE, 0).

@@ -24,16 +24,22 @@ If your usage pattern is read heavy and want to use slaves for reading, connect 
 
 Always use an atom for naming connections. The connection process will register itself on that name. 
 Runtime connection API:
-mongodb:singleServer/1
-mongodb:singleServer/2
+mongodb:singleServer/1,2
 mongodb:replicaPairs/3
+mongodb:replicaSets/2
 mongodb:masterSlave/3
 mongodb:connect/1
 
-Connection info is saved in an application variable (erlmongo,connections) and updated with every call to: singleServer, masterSlave, replicaPairs, masterMaster and deleteConnection. If mongodb process crashes for some reason, connections will be restarted. Also if the application itself is stopped and started. You can add a connections variable to erlmongo.app file:
+Connection info is saved in an application variable (erlmongo,connections) and updated with every call to: singleServer, masterSlave, replicaPairs, masterMaster, replicaSets, and deleteConnection. If mongodb process crashes for some reason, connections will be restarted. Also if the application itself is stopped and started. You can add a connections variable to erlmongo.app file:
   % def is name of connection, types can be: masterSlave,masterMaster or replicaPairs. This is how singleServer info is saved:
   {env, [{def,{masterSlave,{"localhost",27017},{"localhost",27017}}}]},
 
+= Replica sets
+  % List of servers does not have to be the entire list of the replica set. 
+  % Erlmongo will read the primary server from them and connect to it (even if not in the list).
+  mongodb:replicaSets(repl,["127.0.0.1:30000","127.0.0.1:30001"]).
+  mongodb:connect(repl).
+  
 = Examples
   make
   erl
