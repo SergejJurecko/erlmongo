@@ -162,16 +162,8 @@ exec_getmore(Pool,Col, C) ->
 			end
 	end.
 exec_delete(Pool,Collection, D) ->
-	% case gen_server:call(?MODULE, {getwrite,Pool}) of
-	% 	undefined ->
-	% 		not_connected;
-	% 	PID ->
-	% 		PID ! {delete, Collection, D},
-	% 		ok
-	% end.
 	trysend(Pool,{delete,Collection,D},1).
 exec_find(Pool,Collection, Quer) ->
-	% case gen_server:call(?MODULE, {getread,Pool}) of
 	case trysend(Pool,{find, self(), Collection, Quer},1) of
 		ok ->
 			receive
@@ -184,22 +176,8 @@ exec_find(Pool,Collection, Quer) ->
 			X
 	end.
 exec_insert(Pool,Collection, D) ->
-	% case gen_server:call(?MODULE, {getwrite,Pool}) of
-	% 	undefined ->
-	% 		not_connected;
-	% 	PID ->
-	% 		PID ! {insert, Collection, D},
-	% 		ok
-	% end.
 	trysend(Pool,{insert,Collection,D},1).
 exec_update(Pool,Collection, D) ->
-	% case gen_server:call(?MODULE, {getwrite,Pool}) of
-	% 	undefined ->
-	% 		not_connected;
-	% 	PID ->
-	% 		PID ! {update, Collection, D},
-	% 		ok
-	% end.
 	trysend(Pool,{update,Collection,D},1).
 exec_cmd(Pool,DB, Cmd) ->
 	Quer = #search{ndocs = 1, nskip = 0, criteria = mongodb:encode(Cmd)},
@@ -708,6 +686,13 @@ connection(#con{} = P,Index,Buf) ->
 				ifmaster ->
 					self() ! {find, Source, <<"admin.$cmd">>, #search{nskip = 0, ndocs = 1, criteria = mongodb:encode([{<<"ismaster">>, 1}])}};
 				_ ->
+					case whereis(Pool) of
+						undefined ->
+							ok;
+						EProc ->
+							EProc ! {stop},
+							timer:sleep(30)
+					end,
 					register(Pool,self()),
 					Source ! {conn_established, Pool, Type, self()}
 			end,
@@ -715,8 +700,7 @@ connection(#con{} = P,Index,Buf) ->
 		{tcp_closed, _} ->
 			exit(stop)
 	end.
-readpacket(Bin) ->
-	<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/little, Body/binary>> = Bin,
+readpacket(<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/little, Body/binary>> = Bin) ->
 	BodySize = ComplSize-16,
 	case Body of
 		<<Packet:BodySize/binary,Rem/binary>> ->
@@ -735,7 +719,9 @@ readpacket(Bin) ->
 			end;
 		_ ->
 			Bin
-	end.
+	end;
+readpacket(Bin) ->
+	Bin.
 
 	
 constr_header(Len, ID, RespTo, OP) ->
