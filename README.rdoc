@@ -14,12 +14,12 @@ For instance:
   % This will NOT work
   Mong:findOne(#mydoc{i = 10}, [#mydoc.i, #mydoc.name]).
 
-WARNING: If you use modifier updates with {set,Value} ($set), do not use records. Mongo changes the document element sequence and this messes up record serialization.
+WARNING: If you use modifier updates with {set,Value} ($set), do not use records if that value is a string that changes size (it should work for integers for instance). Mongo changes the document element sequence and this messes up record serialization.
 
-Connections are always single:
+Connections are always single to the master:
 - master/slave - read and write from master
 - master/master - pick a master at random and use it for everything
-- replica pairs - find out which is master and connect to it
+- replica pairs/sets - find out which is master and connect to it
 If your usage pattern is read heavy and want to use slaves for reading, connect to them with singleServer call. Don't write to slave connections or bad things will happen.
 
 Always use an atom for naming connections. The connection process will register itself on that name. 

@@ -3,7 +3,7 @@
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 % API
 -export([connect/1, connect/2, is_connected/1,deleteConnection/1, singleServer/2, singleServer/1, 
-		 masterSlave/3,masterMaster/3, replicaPairs/3, datetime_to_now/1,replicas/2]).
+		 masterSlave/3,masterMaster/3, replicaPairs/3, datetime_to_now/1,replicaSets/2]).
 % Internal
 -export([exec_cursor/3, exec_delete/3, exec_cmd/3, exec_insert/3, exec_find/3, exec_update/3, exec_getmore/3,  
          encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, rec/0, recoffset/1, recfields/1,
