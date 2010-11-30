@@ -176,7 +176,7 @@ findOne(Query) when is_tuple(Query) ->
 		R ->
 			R
 	end.
-findOne(Col, [_|_] = Query, [_|_] = Selector) ->
+findOne(Col, Query, Selector) ->
 	case find(Col, Query, Selector, 0, 1) of
 		{ok, [Res]} -> {ok, Res};
 		{ok, []} -> {ok, []};

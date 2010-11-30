@@ -29,6 +29,7 @@ mongodb:replicaPairs/3
 mongodb:replicaSets/2
 mongodb:masterSlave/3
 mongodb:connect/1
+mongodb:sharded/2
 
 Connection info is saved in an application variable (erlmongo,connections) and updated with every call to: singleServer, masterSlave, replicaPairs, masterMaster, replicaSets, and deleteConnection. If mongodb process crashes for some reason, connections will be restarted. Also if the application itself is stopped and started. You can add a connections variable to erlmongo.app file:
   % def is name of connection, types can be: masterSlave,masterMaster or replicaPairs. This is how singleServer info is saved:
