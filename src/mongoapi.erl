@@ -257,6 +257,21 @@ findOpt(Col, #search{} = Q, Opts) ->
 findOpt(#search{} = Q, Opts) ->
 	findOpt(Q#search.criteria, Q#search.field_selector, Opts, Q#search.nskip, Q#search.ndocs).
 	
+cursor(Col,Query, Selector, Opts, From, Limit) ->
+	{_,Q} = translateopts(false,Query, Opts,[{<<"query">>, {bson, mongodb:encode(Query)}}]),
+	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encode(Selector),
+	             criteria = mongodb:encode(Q),
+				 opts = ?QUER_OPT_CURSOR},
+	case mongodb:exec_cursor(Pool,name(Col), Quer) of
+		not_connected ->
+			not_connected;
+		{done, <<>>} ->
+			{done, []};
+		{done, Result} ->
+			{done, mongodb:decode(Result)};
+		{Cursor, Result} ->
+			{ok, Cursor, mongodb:decode(Result)}
+	end.
 cursor(Query, Selector, Opts, From, Limit) ->
 	{_,Q} = translateopts(false,Query, Opts,[{<<"query">>, {bson, mongodb:encode_findrec(Query)}}]),
 	Quer = #search{ndocs = Limit, nskip = From, field_selector = mongodb:encoderec_selector(Query, Selector),
@@ -272,6 +287,17 @@ cursor(Query, Selector, Opts, From, Limit) ->
 		{Cursor, Result} ->
 			{ok, Cursor, mongodb:decoderec(Query, Result)}
 	end.
+getMore(Rec, Cursor) when is_list(Rec); is_binary(Rec) ->
+	case mongodb:exec_getmore(Pool,Rec, Cursor) of
+		not_connected ->
+			not_connected;
+		{done, <<>>} ->
+			{done, []};
+		{done, Result} ->
+			{done, mongodb:decoderec(Rec, Result)};
+		{ok, Result} ->
+			{ok, mongodb:decoderec(Rec, Result)}
+	end;
 getMore(Rec, Cursor) ->
 	case mongodb:exec_getmore(Pool,name(element(1,Rec)), Cursor) of
 		not_connected ->
