@@ -163,6 +163,14 @@ GridFS
 * gfsFlush
 * gfsClose
 
+== Building
+erl -make 
+
+or with autotools
+./configure
+make
+make install
+
 == Author
  Sergej Jurečko
 
