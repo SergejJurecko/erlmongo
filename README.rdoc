@@ -131,11 +131,12 @@ Mochijson library has a different string/list encoding convention:
 string = binary
 array = list
 You can choose a preferred way to encode with mongoapi:set_encode_style/1.
+Selected style is set to a selected server and table and not for mongoapi module instance.
 An example:
   ...
   12> Mong:set_encode_style(default).
   ok
-  13> Mong:save("fuubar", [{<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
+  13> Mong:save("foobar", [{<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
   ** exception error: bad argument
        in function  unicode:characters_to_binary/1
           called as unicode:characters_to_binary([[1.1,2.2],[3.3,4.4]])
@@ -147,7 +148,7 @@ An example:
        in call from mongoapi:save/3
   14> Mong:set_encode_style(mochijson).
   ok
-  15> Mong:save("fuubar", [{<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
+  15> Mong:save("foobar", [{<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
   {oid,<<"000af08b902dee723e000006">>}
 
 
