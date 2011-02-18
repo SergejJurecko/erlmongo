@@ -4,12 +4,12 @@
 -include_lib("erlmongo.hrl").
 
 set_encode_style(mochijson) ->
-	application:set_env(erlmongo, encode_style, mochijson);
+	put({Pool, DB, style}, mochijson);
 set_encode_style(default) ->
-	application:set_env(erlmongo, encode_style, default).
+	put({Pool, DB, style}, default).
 
 set_encode_style() ->
-	application:set_env(erlmongo, encode_style, default).
+	put({Pool, DB, style}, default).
 
 
 % Dynamically add record information for erlmongo.
@@ -40,9 +40,9 @@ remove(Col, Selector) ->
 
 
 save(Collection, [_|_] = L) ->
-        Style = case application:get_env(erlmongo, encode_style) of
+	Style = case get({Pool, DB, style}) of
 		undefined -> default;
-		{ok, T} -> T
+		T -> T
         end,
 	%io:format("Save on ~p~n", [L]),
 	case lists:keysearch(<<"_id">>, 1, L) of

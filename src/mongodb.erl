@@ -239,7 +239,7 @@ startgfs(P) ->
 %   replicaPairs: read = write = master
 %   masterMaster: pick one at random
 % timer is reconnect timer if some connection is missing
--record(conn, {pid, timer, conninfo, cb}).
+-record(conn, {pid, timer, conninfo, cb, style=default}).
 % indexes is ensureIndex cache (an ets table).
 -record(mngd, {indexes, hashed_hostn, oid_index = 1}).
 -define(R2P(Record), rec2prop(Record, record_info(fields, mngd))).
