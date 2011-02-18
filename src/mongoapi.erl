@@ -63,7 +63,6 @@ save(Collection, [_|_] = L) ->
 			end
 	end;
 save(Collection, Rec) ->
-	io:format("lol~n", []),
 	Offset = mongodb:recoffset(Rec),
 	case element(Offset, Rec) of
 		undefined ->
