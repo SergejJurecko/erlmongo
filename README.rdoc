@@ -1,6 +1,6 @@
 = Info
 
-Erlmongo is a pretty complete Erlang driver for mongodb. 
+Erlmongo is a pretty complete Erlang driver for mongodb.
 
 It supports records and proplists as datatypes. Strings can be lists or binaries, but strings received from mongodb (as a result of find) will be binaries.
 
@@ -22,7 +22,7 @@ Connections are always single to the master:
 - replica pairs/sets - find out which is master and connect to it
 If your usage pattern is read heavy and want to use slaves for reading, connect to them with singleServer call. Don't write to slave connections or bad things will happen.
 
-Always use an atom for naming connections. The connection process will register itself on that name. 
+Always use an atom for naming connections. The connection process will register itself on that name.
 Runtime connection API:
 mongodb:singleServer/1,2
 mongodb:replicaPairs/3
@@ -36,11 +36,11 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   {env, [{def,{masterSlave,{"localhost",27017},{"localhost",27017}}}]},
 
 = Replica sets
-  % List of servers does not have to be the entire list of the replica set. 
+  % List of servers does not have to be the entire list of the replica set.
   % Erlmongo will read the primary server from them and connect to it (even if not in the list).
   mongodb:replicaSets(repl,["127.0.0.1:30000","127.0.0.1:30001"]).
   mongodb:connect(repl).
-  
+
 = Examples
   make
   erl
@@ -51,17 +51,22 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   mongodb:connect(def).
   % Create an interface for test database (it has to be a binary)
   Mong = mongoapi:new(def,<<"test">>).
-  
+
   % Save a new document
   Mong:save(#mydoc{name = "MyDocument", i = 10}).
   % Return the document, but only the "i" field (+ _id which always gets returned)
   Mong:findOne(#mydoc{i = 10}, [#mydoc.name]).
-  
+
   % With proplists
   Mong:save("mydoc", [{"name", "MyDocument"}, {"i", 10}]).
   Mong:findOne("mydoc", [{"i", 10}], [{"name", 1}]).
 
-  % Set Index. First parameter is so that the driver knows what collection 
+  % Switch to mochijson's style proplists (string = binary, array = list, no list-coded strings)
+  Mong:set_encode_style(mochijson),
+  Mong:save("mydoc", [{<<"name">>, <<"2-dim array">>}, {<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
+
+
+  % Set Index. First parameter is so that the driver knows what collection
   %  we mean. If you have an already constructed record laying around use that.
   %  No need to construct a new record just so the driver can read the name.
   % Second parameter the index we wish to create. 1 = ascending, -1 = descending.
@@ -73,7 +78,7 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   Mong:find(#mydoc{i = 4}, [#mydoc.name], 0, 0).
   % Same thing but with #search record that provides default parameters
   Mong:find(#search{criteria = #mydoc{i = 4}, field_selector = [#mydoc.name]}).
-  
+
   % Find with options
   Mong:findOpt(#mydoc{i = 4}, undefined, [explain], 0, 0).
   % Same thing as above
@@ -90,11 +95,11 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   Mong:find(#mydoc{i = {mod, 2, 0}}, undefined, 0,0).
   % Documents with i larger than 2:
   Mong:find(#mydoc{i = {gt, 2}}, undefined, 0,0).
-  % Documents with i between 2 and 5: 
+  % Documents with i between 2 and 5:
   Mong:find(#mydoc{i = {in, {gt, 2}, {lt, 5}}}, undefined, 0,0).
-  % in example: 
+  % in example:
   Mong:find(#mydoc{tags = {in, [2,3,4]}}, undefined, 0,0).
-  % exists example: 
+  % exists example:
   Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
 
   % findandmodify command
@@ -119,7 +124,33 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   Mong:gfsClose(PID).
 
 = Supported Data types and modifiers
-Look at mongodb:encode_element/1 
+Look at mongodb:encode_element/1
+
+= Switching to mochijson's style proplists
+Mochijson library has a different string/list encoding convention:
+string = binary
+array = list
+You can choose a preferred way to encode with mongoapi:set_encode_style/1.
+Selected style is set to a selected server and table and not for mongoapi module instance.
+An example:
+  ...
+  12> Mong:set_encode_style(default).
+  ok
+  13> Mong:save("foobar", [{<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
+  ** exception error: bad argument
+       in function  unicode:characters_to_binary/1
+          called as unicode:characters_to_binary([[1.1,2.2],[3.3,4.4]])
+       in call from mongodb:encode_cstring/1
+       in call from mongodb:encode_element/1
+       in call from mongodb:'-encode/2-fun-0-'/3
+       in call from lists:foldl/3
+       in call from mongodb:encode/2
+       in call from mongoapi:save/3
+  14> Mong:set_encode_style(mochijson).
+  ok
+  15> Mong:save("foobar", [{<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
+  {oid,<<"000af08b902dee723e000006">>}
+
 
 == Supported operation list
 Collections
@@ -138,7 +169,7 @@ Collections
 
 Search
 * find
-* findopt 
+* findopt
 * cursor - getMore - closeCursor
 * findOne
 
@@ -164,7 +195,7 @@ GridFS
 * gfsClose
 
 == Building
-erl -make 
+erl -make
 
 or with autotools
 ./configure
@@ -173,4 +204,3 @@ make install
 
 == Author
  Sergej Jurečko
-

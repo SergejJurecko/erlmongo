@@ -1,13 +1,13 @@
 -module(mongodb).
--export([deser_prop/1,reload/0, print_info/0, start/0, stop/0, init/1, handle_call/3, 
+-export([deser_prop/1,reload/0, print_info/0, start/0, stop/0, init/1, handle_call/3,
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 % API
--export([connect/1, connect/2, is_connected/1,deleteConnection/1, singleServer/2, singleServer/1, 
+-export([connect/1, connect/2, is_connected/1,deleteConnection/1, singleServer/2, singleServer/1,
 		 masterSlave/3,masterMaster/3, replicaPairs/3, datetime_to_now/1,replicaSets/2,sharded/2]).
 % Internal
--export([exec_cursor/3, exec_delete/3, exec_cmd/3, exec_insert/3, exec_find/3, exec_update/3, exec_getmore/3,  
+-export([exec_cursor/3, exec_delete/3, exec_cmd/3, exec_insert/3, exec_find/3, exec_update/3, exec_getmore/3,
          encoderec/1, encode_findrec/1, encoderec_selector/2, gen_keyname/2, gen_prop_keyname/2, rec/0, recoffset/1, recfields/1,
-         decoderec/2, encode/1, decode/1, ensureIndex/3, clearIndexCache/0, create_id/0, startgfs/1, dec2hex/2, hex2dec/2]).
+         decoderec/2, encode/1, encode/2, decode/1, ensureIndex/3, clearIndexCache/0, create_id/0, startgfs/1, dec2hex/2, hex2dec/2]).
 % -define(DEBUG,true).
 -include_lib("erlmongo.hrl").
 % -compile(export_all).
@@ -44,10 +44,10 @@ start() ->
 
 stop() ->
 	gen_server:call(?MODULE, stop).
-	
+
 % register() ->
 % 	supervisor:start_child(supervisor, {?MODULE, {?MODULE, start, []}, permanent, 1000, worker, [?MODULE]}).
-		
+
 print_info() ->
 	gen_server:cast(?MODULE, {print_info}).
 
@@ -58,7 +58,7 @@ print_info() ->
 % 	t(N, B),
 % 	Stop = now(),
 % 	io:format("~p, ~p~n", [Stop, timer:now_diff(Stop,Start)]).
-% 
+%
 % t(0, _) ->
 % 	true;
 % t(N, R) ->
@@ -86,7 +86,7 @@ deleteConnection(Pool) ->
 
 is_connected(Pool) ->
 	gen_server:call(?MODULE, {is_connected,Pool}).
-	
+
 singleServer(Pool) ->
 	% gen_server:cast(?MODULE, {conninfo,Pool, {replicaPairs, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
 	gen_server:cast(?MODULE, {conninfo,Pool, {masterSlave, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
@@ -116,10 +116,10 @@ replicaPairs(Pool,Addr1,Addr2) ->
 replicaSets(Pool,L) ->
 	LT = [list_to_tuple(string:tokens(S,":")) || S <- L],
 	gen_server:cast(?MODULE,{conninfo,Pool,{replicaSets,LT}}).
-datetime_to_now(Loctime) ->	
+datetime_to_now(Loctime) ->
 	Secs = calendar:datetime_to_gregorian_seconds(Loctime) - 719528 * 24 * 60 * 60,
 	{Secs div 1000000, Secs rem 1000000,0}.
-	
+
 ensureIndex(Pool,DB,Bin) ->
 	gen_server:cast(?MODULE, {ensure_index,Pool, DB, Bin}).
 clearIndexCache() ->
@@ -150,7 +150,7 @@ exec_getmore(Pool,Col, C) ->
 	case erlang:is_process_alive(C#cursor.pid) of
 		false ->
 			{done, <<>>};
-		true ->			
+		true ->
 			case trysend(Pool,{getmore, self(), Col, C},1) of
 				ok ->
 					receive
@@ -215,7 +215,7 @@ trysend(Pool,Query,N) ->
 		_ ->
 			ok
 	end.
-		
+
 create_id() ->
 	dec2hex(<<>>, gen_server:call(?MODULE, {create_oid})).
 
@@ -228,7 +228,7 @@ startgfs(P) ->
 %								IMPLEMENTATION
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Process dictionary: 
+% Process dictionary:
 % {PoolName, #conn{}}
 % {ConnectionPID, PoolName}
 
@@ -239,12 +239,12 @@ startgfs(P) ->
 %   replicaPairs: read = write = master
 %   masterMaster: pick one at random
 % timer is reconnect timer if some connection is missing
--record(conn, {pid, timer, conninfo, cb}).
+-record(conn, {pid, timer, conninfo, cb, style=default}).
 % indexes is ensureIndex cache (an ets table).
 -record(mngd, {indexes, hashed_hostn, oid_index = 1}).
 -define(R2P(Record), rec2prop(Record, record_info(fields, mngd))).
--define(P2R(Prop), prop2rec(Prop, mngd, #mngd{}, record_info(fields, mngd))).	
-	
+-define(P2R(Prop), prop2rec(Prop, mngd, #mngd{}, record_info(fields, mngd))).
+
 
 handle_call({create_oid}, _, P) ->
 	WC = element(1,erlang:statistics(wall_clock)) rem 16#ffffffff,
@@ -278,7 +278,7 @@ startcon(Name, undefined, Type, Addr, Port) ->
 	PID ! {start, Name, self(), Type, Addr, Port};
 startcon(_,PID, _, _, _) ->
 	PID.
-	
+
 handle_cast({ensure_index,Pool, DB, Bin}, P) ->
 	case ets:lookup(P#mngd.indexes, {DB,Bin}) of
 		[] ->
@@ -471,7 +471,7 @@ handle_info({query_result, Src, <<_:20/binary, Res/binary>>}, P) ->
 		[Obj] ->
 			case proplists:get_value(<<"ismaster">>,Obj) of
 				% [[{<<"ismaster">>, 1}|_]] when element(1,PI#conn.conninfo) == replicaPairs, PI#conn.pid == undefined ->
-				Val when (Val == true orelse Val == 1) andalso 
+				Val when (Val == true orelse Val == 1) andalso
 						 ((element(1,PI#conn.conninfo) == replicaPairs andalso PI#conn.pid == undefined) orelse
 						 (element(1,PI#conn.conninfo) == replicaSets andalso PI#conn.pid == undefined)) ->
 					?DBG("foundmaster ~p", [Src]),
@@ -509,10 +509,10 @@ handle_info({query_result, Src, <<_:20/binary, Res/binary>>}, P) ->
 handle_info({query_result, Src, _}, P) ->
 	Src ! {stop},
 	{noreply, P};
-handle_info(_X, P) -> 
+handle_info(_X, P) ->
 	io:format("~p~n", [_X]),
 	{noreply, P}.
-	
+
 
 conndied(Name,PID,P) when P#conn.pid == PID ->
 	put(Name, P#conn{pid = undefined, timer = timer(P#conn.timer, Name)});
@@ -538,7 +538,7 @@ init([]) ->
 	{A1,A2,A3} = now(),
     random:seed(A1, A2, A3),
 	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private]), hashed_hostn = HashedHN}}.
-	
+
 
 
 gfs_proc(#gfs_state{mode = write} = P, Buf) ->
@@ -564,7 +564,7 @@ gfs_proc(#gfs_state{mode = write} = P, Buf) ->
 		{start} ->
 			process_flag(trap_exit,true),
 			FileID = (P#gfs_state.file)#gfs_file.docid,
-			exec_update(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".files">>, #update{selector = mongodb:encode([{<<"_id">>, {oid, FileID}}]), 
+			exec_update(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".files">>, #update{selector = mongodb:encode([{<<"_id">>, {oid, FileID}}]),
 																		document = mongodb:encoderec(P#gfs_state.file)}),
 			Keys = [{<<"files_id">>, 1},{<<"n">>,1}],
 			Bin = mongodb:encode([{plaintext, <<"name">>, gen_prop_keyname(Keys, <<>>)},
@@ -598,9 +598,9 @@ gfs_proc(#gfs_state{mode = read} = P, Buf) ->
 				_ ->
 					GetChunks = ((N - byte_size(Buf)) div CSize) + 1,
 					% io:format("Finding buf ~p, getchunks ~p, skip ~p~n", [byte_size(Buf), GetChunks,P#gfs_state.nchunk]),
-					Quer = #search{ndocs = GetChunks, nskip = 0, 
+					Quer = #search{ndocs = GetChunks, nskip = 0,
 								   criteria = mongodb:encode([{<<"files_id">>, (P#gfs_state.file)#gfs_file.docid},
-															  {<<"n">>, {in,{gte, P#gfs_state.nchunk},{lte, P#gfs_state.nchunk + GetChunks}}}]), 
+															  {<<"n">>, {in,{gte, P#gfs_state.nchunk},{lte, P#gfs_state.nchunk + GetChunks}}}]),
 								   field_selector = get(field_selector)},
 					% io:format("find ~p~n", [{P#gfs_state.pool,P#gfs_state.collection}]),
 					case mongodb:exec_find(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".chunks">>, Quer) of
@@ -636,7 +636,7 @@ gfs_proc(#gfs_state{mode = read} = P, Buf) ->
 chunk2bin([[_, {_, {binary, 2, Chunk}}]|T], Bin) ->
 	chunk2bin(T, <<Bin/binary, Chunk/binary>>);
 chunk2bin(_, B) ->
-	B.	
+	B.
 
 
 gfsflush(P, Bin, Out) ->
@@ -645,11 +645,11 @@ gfsflush(P, Bin, Out) ->
 	case Bin of
 		<<ChunkBin:CSize/binary, Rem/binary>> ->
 			Chunk = #gfs_chunk{docid = {oid,create_id()}, files_id = FileID, n = P#gfs_state.nchunk, data = {binary, 2, ChunkBin}},
-			gfsflush(P#gfs_state{nchunk = P#gfs_state.nchunk + 1, length = P#gfs_state.length + CSize}, 
+			gfsflush(P#gfs_state{nchunk = P#gfs_state.nchunk + 1, length = P#gfs_state.length + CSize},
 					 Rem, <<Out/binary, (mongodb:encoderec(Chunk))/binary>>);
 		Rem when P#gfs_state.closed == true, byte_size(Rem) > 0 ->
 			Chunk = #gfs_chunk{docid = {oid,create_id()}, files_id = FileID, n = P#gfs_state.nchunk, data = {binary, 2, Rem}},
-			gfsflush(P#gfs_state{length = P#gfs_state.length + byte_size(Rem)}, 
+			gfsflush(P#gfs_state{length = P#gfs_state.length + byte_size(Rem)},
 			         <<>>, <<Out/binary, (mongodb:encoderec(Chunk))/binary>>);
 		Rem when byte_size(Out) > 0 ->
 			File = P#gfs_state.file,
@@ -668,14 +668,14 @@ gfsflush(P, Bin, Out) ->
 				false ->
 					MD5 = undefined
 			end,
-			exec_update(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".files">>, #update{selector = mongodb:encode([{<<"_id">>, FileID}]), 
+			exec_update(P#gfs_state.pool,<<(P#gfs_state.collection)/binary, ".files">>, #update{selector = mongodb:encode([{<<"_id">>, FileID}]),
 																		document = mongodb:encoderec(File#gfs_file{length = P#gfs_state.length,
 																		                                           md5 = MD5})}),
 			gfsflush(P, Rem, <<>>);
 		_Rem ->
 			P
 	end.
-	
+
 -record(ccd, {conn,cursor = 0}).
 % Just for cleanup
 cursorcleanup(P) ->
@@ -737,7 +737,7 @@ connection(#con{} = P,Index,Buf) ->
 			connection(P,Index,readpacket(<<Buf/binary,Bin/binary>>));
 		{ping} ->
 			erlang:send_after(1000,self(),{ping}),
-			Collection = <<"admin.$cmd">>, 
+			Collection = <<"admin.$cmd">>,
 			Query = #search{nskip = 0, ndocs = 1, criteria = mongodb:encode([{<<"ping">>, 1}])},
 			QBin = constr_query(Query,Index, Collection),
 			ok = gen_tcp:send(P#con.sock, QBin),
@@ -791,12 +791,12 @@ readpacket(<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/l
 readpacket(Bin) ->
 	Bin.
 
-	
+
 constr_header(Len, ID, RespTo, OP) ->
 	<<(Len+16):32/little, ID:32/little, RespTo:32/little, OP:32/little>>.
 
 constr_update(U, Name) ->
-	Update = <<0:32, Name/binary, 0:8, 
+	Update = <<0:32, Name/binary, 0:8,
 	           (U#update.upsert):32/little, (U#update.selector)/binary, (U#update.document)/binary>>,
 	Header = constr_header(byte_size(Update), 0, 0, ?OP_UPDATE),
 	<<Header/binary, Update/binary>>.
@@ -807,7 +807,7 @@ constr_insert(U, Name) ->
 	<<Header/binary, Insert/binary>>.
 
 constr_query(U, Index, Name) ->
-	Query = <<(U#search.opts):32/little, Name/binary, 0:8, (U#search.nskip):32/little, (U#search.ndocs):32/little, 
+	Query = <<(U#search.opts):32/little, Name/binary, 0:8, (U#search.nskip):32/little, (U#search.ndocs):32/little,
 	  		  (U#search.criteria)/binary, (U#search.field_selector)/binary>>,
 	Header = constr_header(byte_size(Query), Index, 0, ?OP_QUERY),
 	<<Header/binary,Query/binary>>.
@@ -821,7 +821,7 @@ constr_delete(U, Name) ->
 	Delete = <<0:32, Name/binary, 0:8, 0:32, (U#delete.selector)/binary>>,
 	Header = constr_header(byte_size(Delete), 0, 0, ?OP_DELETE),
 	<<Header/binary, Delete/binary>>.
-	
+
 constr_killcursors(U) ->
 	Kill = <<0:32, (byte_size(U#killc.cur_ids) div 8):32/little, (U#killc.cur_ids)/binary>>,
 	Header = constr_header(byte_size(Kill), 0, 0, ?OP_KILL_CURSORS),
@@ -832,7 +832,7 @@ constr_killcursors(U) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%						BSON encoding/decoding 
+%						BSON encoding/decoding
 %	basic BSON encoding/decoding taken and modified from the mongo-erlang-driver project by Elias Torres
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -878,7 +878,7 @@ encode_findrec(Rec) ->
 	% [_|Fields] = element(element(2, Rec), ?RECTABLE),
 	Fields = recfields(Rec),
 	encoderec(<<>>, flat, Rec, Fields, recoffset(Rec), <<>>).
-	
+
 encoderec(NameRec, Type, Rec, [{FieldName, _RecIndex}|T], N, Bin) ->
 	case element(N, Rec) of
 		undefined ->
@@ -978,7 +978,7 @@ gen_prop_keyname([{KeyName, KeyVal}|T], Bin) ->
 	gen_prop_keyname(T, <<Bin/binary, KeyName/binary, "_", Add/binary>>);
 gen_prop_keyname([], B) ->
 	B.
-	
+
 gen_keyname(Rec, Keys) ->
 	% [_|Fields] = element(element(2, Rec), ?RECTABLE),
 	Fields = recfields(Rec),
@@ -1005,7 +1005,7 @@ gen_keyname([], _, _, <<"_", Name/binary>>) ->
 gen_keyname(Keys, [_|Fields], KeyIndex, Name) ->
 	% [{I,_}|_] = Keys,
 	gen_keyname(Keys, Fields, KeyIndex+1, Name).
-	
+
 
 decoderec(Rec, <<>>) ->
 	% Rec;
@@ -1019,7 +1019,7 @@ decoderec(Rec, Bin) ->
 		_ ->
 			decode_records([], Bin, tuple_size(Rec), element(1,Rec), undefined, Fields)
 	end.
-	
+
 
 decode_records(RecList, <<_ObjSize:32/little, Bin/binary>>, TupleSize, Name, TabIndex, Fields) ->
 	case TabIndex of
@@ -1075,7 +1075,7 @@ rec_field_list(RecVals, N, [Field|Fields], <<Type:8, Bin/binary>>) ->
 							RecFields = recfields(RecName),
 							RecLen = length(RecFields)+recoffset(RecName)-1
 					end,
-					[Value] = decode_records([], <<LRecSize:32/little, RecBin/binary>>, RecLen, 
+					[Value] = decode_records([], <<LRecSize:32/little, RecBin/binary>>, RecLen,
 													RecName, RecIndex, RecFields),
 					rec_field_list([{N, Value}|RecVals], N+1, Fields, Remain);
 				_ ->
@@ -1127,9 +1127,24 @@ encode(undefined) ->
 encode(<<>>) ->
 	<<>>;
 encode(Items) ->
-	Bin = lists:foldl(fun(Item, B) -> <<B/binary, (encode_element(Item))/binary>> end, <<>>, Items),
-    <<(byte_size(Bin)+5):32/little-signed, Bin/binary, 0:8>>.
+	encode(Items, default).
 
+encode(Items, Style) ->
+	Bin = lists:foldl(fun(Item, B) -> <<B/binary, (encode_element(Item, Style))/binary>> end, <<>>, Items),
+	<<(byte_size(Bin)+5):32/little-signed, Bin/binary, 0:8>>.
+
+% mochijson behaviour
+encode_element({Name, [{_,_}|_] = Items}, mochijson) ->
+	Binary = encode(Items, mochijson),
+	<<3, Name/binary, 0, Binary/binary>>;
+
+encode_element({Name, Items}, mochijson) when is_list(Items) ->
+	<<4, Name/binary, 0, (encarray([], Items, 0, mochijson))/binary>>;
+
+encode_element(A, _Style) ->
+	encode_element(A). %fallback
+
+% default behaviour
 encode_element({[_|_] = Name, Val}) ->
 	encode_element({list_to_binary(Name),Val});
 encode_element({Name, [{_,_}|_] = Items}) ->
@@ -1155,7 +1170,7 @@ encode_element({plaintext, Name, Val}) -> % exists for performance reasons.
 encode_element({Name, true}) ->
 	<<8, Name/binary, 0, 1:8>>;
 encode_element({Name, false}) ->
-	<<8, Name/binary, 0, 0:8>>;	
+	<<8, Name/binary, 0, 0:8>>;
 encode_element({Name, {oid, OID}}) ->
 	<<7, Name/binary, 0, (hex2dec(<<>>, OID))/binary>>;
 % list of lists = array
@@ -1221,26 +1236,26 @@ encode_element({Name, {binary, SubType, Data}}) ->
 encode_element({Name, Value}) when is_float(Value) ->
 	<<1, (Name)/binary, 0, Value:64/little-signed-float>>;
 encode_element({Name, {obj, []}}) ->
-	<<3, Name/binary, 0, (encode([]))/binary>>;	
+	<<3, Name/binary, 0, (encode([]))/binary>>;
 encode_element({Name, {MegaSecs, Secs, MicroSecs}}) when  is_integer(MegaSecs),is_integer(Secs),is_integer(MicroSecs) ->
-  Unix = MegaSecs * 1000000 + Secs,
-  Millis = Unix * 1000 + (MicroSecs div 1000),
-  <<9, Name/binary, 0, Millis:64/little-signed>>;
+	Unix = MegaSecs * 1000000 + Secs,
+	Millis = Unix * 1000 + (MicroSecs div 1000),
+	<<9, Name/binary, 0, Millis:64/little-signed>>;
 encode_element({Name, null}) ->
-  <<10, Name/binary, 0>>;
+	<<10, Name/binary, 0>>;
 encode_element({Name, {regex, Expression, Flags}}) ->
-  ExpressionEncoded = encode_cstring(Expression),
-  FlagsEncoded = encode_cstring(Flags),
-  <<11, Name/binary, 0, ExpressionEncoded/binary, FlagsEncoded/binary>>;
+	ExpressionEncoded = encode_cstring(Expression),
+	FlagsEncoded = encode_cstring(Flags),
+	<<11, Name/binary, 0, ExpressionEncoded/binary, FlagsEncoded/binary>>;
 encode_element({Name, {ref, Collection, <<First:8/little-binary-unit:8, Second:4/little-binary-unit:8>>}}) ->
-  CollectionEncoded = encode_cstring(Collection),
-  FirstReversed = lists:reverse(binary_to_list(First)),
-  SecondReversed = lists:reverse(binary_to_list(Second)),
-  OID = list_to_binary(lists:append(FirstReversed, SecondReversed)),
-  <<12, Name/binary, 0, (byte_size(CollectionEncoded)):32/little-signed, CollectionEncoded/binary, OID/binary>>;
+	CollectionEncoded = encode_cstring(Collection),
+	FirstReversed = lists:reverse(binary_to_list(First)),
+	SecondReversed = lists:reverse(binary_to_list(Second)),
+	OID = list_to_binary(lists:append(FirstReversed, SecondReversed)),
+	<<12, Name/binary, 0, (byte_size(CollectionEncoded)):32/little-signed, CollectionEncoded/binary, OID/binary>>;
 encode_element({Name, {code, Code}}) ->
-  CodeEncoded = encode_cstring(Code),
-  <<13, Name/binary, 0, (byte_size(CodeEncoded)):32/little-signed, CodeEncoded/binary>>;
+	CodeEncoded = encode_cstring(Code),
+	<<13, Name/binary, 0, (byte_size(CodeEncoded)):32/little-signed, CodeEncoded/binary>>;
 encode_element({Name,{bignum,Value}}) ->
 	<<18, Name/binary, 0, Value:64/little-signed>>;
 % code with scope
@@ -1248,23 +1263,26 @@ encode_element({Name, {code, C, S}}) ->
 	Code = encode_cstring(C),
 	Scope = encode(S),
 	<<15, Name/binary, 0, (8+byte_size(Code)+byte_size(Scope)):32/little, (byte_size(Code)):32/little, Code/binary, Scope/binary>>.
-	
-	
-encarray(L, [H|T], N) ->
-	encarray([{integer_to_list(N), H}|L], T, N+1);
-encarray(L, [], _) ->
-	encode(lists:reverse(L)).
+
+
+encarray(L, Lst, N) -> %fallback
+	encarray(L, Lst, N, default).
+
+encarray(L, [H|T], N, Style) ->
+	encarray([{list_to_binary(integer_to_list(N)), H}|L], T, N+1, Style);
+encarray(L, [], _, Style) ->
+	encode(lists:reverse(L), Style).
 
 encode_cstring(String) ->
     <<(unicode:characters_to_binary(String))/binary, 0:8>>.
-	
+
 %% Size has to be greater than 4
 % decode(<<Size:32/little-signed, Rest/binary>> = Binary) when byte_size(Binary) >= Size, Size > 4 ->
 % 	decode(Rest, Size-4);
-% 
+%
 % decode(_BadLength) ->
 % 	throw({invalid_length}).
-% 
+%
 % decode(Binary, _Size) ->
 %   	case decode_next(Binary, []) of
 %     	{BSON, <<>>} ->
@@ -1358,7 +1376,3 @@ decode_value(15, <<ComplSize:32/little, StrBSize:32/little,Rem/binary>>) ->
 	{{code,Code,decode(Scope)}, Rest};
 decode_value(18, <<Integer:32/little-signed, Rest/binary>>) ->
 	{Integer, Rest}.
-	
-	
-	
-	
