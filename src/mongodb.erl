@@ -1147,12 +1147,12 @@ encode_element(A, _Style) ->
 % default behaviour
 encode_element({[_|_] = Name, Val}) ->
 	encode_element({list_to_binary(Name),Val});
-encode_element({Name, [{_,_}|_] = Items}) ->
+encode_element({<<_/binary>> = Name, [{_,_}|_] = Items}) ->
 	Binary = encode(Items),
 	<<3, Name/binary, 0, Binary/binary>>;
 encode_element({Name, []}) ->
 	<<2, Name/binary, 0, 1:32/little-signed, 0>>;
-encode_element({Name, [_|_] = Value}) ->
+encode_element({<<_/binary>> = Name, [_|_] = Value}) ->
 	ValueEncoded = encode_cstring(Value),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
 encode_element({Name, <<_/binary>> = Value}) ->
@@ -1226,6 +1226,8 @@ encode_element({Name, {all, Val}}) ->
 	encode_element({Name, [{<<"$all">>, {array, Val}}]});
 encode_element({Name, {size, Val}}) ->
 	encode_element({Name, [{<<"$size">>, Val}]});
+encode_element({'or',[{_,_}|_] = L}) ->
+	encode_element({<<"$or">>,{array,[[Obj] || Obj <- L]}});
 encode_element({Name, {'not', Val}}) ->
 	encode_element({Name, [{<<"$not">>, Val}]});
 encode_element({Name, {exists, Val}}) ->
