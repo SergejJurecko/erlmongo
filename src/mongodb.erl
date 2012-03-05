@@ -1260,6 +1260,10 @@ encode_element({Name, {code, Code}}) ->
 	<<13, Name/binary, 0, (byte_size(CodeEncoded)):32/little-signed, CodeEncoded/binary>>;
 encode_element({Name,{bignum,Value}}) ->
 	<<18, Name/binary, 0, Value:64/little-signed>>;
+encode_element({Name,min}) ->
+	<<255, Name/binary, 0>>;
+encode_element({Name,max}) ->
+	<<127, Name/binary, 0>>;
 % code with scope
 encode_element({Name, {code, C, S}}) ->
 	Code = encode_cstring(C),
@@ -1369,12 +1373,18 @@ decode_value(13, <<_Size:32/little-signed, Data/binary>>) ->
 	{Code, Rest} = decode_cstring(Data, <<>>),
 	{{code, Code}, Rest};
 decode_value(14, _Binary) ->
-	% throw(encountered_ommitted);
-	decode_value(2,_Binary);
+	{Code, Rest} = decode_cstring(Data, <<>>),
+	{{symbol, Code}, Rest};
 decode_value(15, <<ComplSize:32/little, StrBSize:32/little,Rem/binary>>) ->
 	StrSize = StrBSize - 1,
 	ScopeSize = ComplSize - 8 - StrBSize,
 	<<Code:StrSize/binary, _, Scope:ScopeSize/binary,Rest/binary>> = Rem,
 	{{code,Code,decode(Scope)}, Rest};
+decode_value(17, <<Integer:64/little-signed, Rest/binary>>) ->
+	{Integer, Rest};
+decode_value(255, Rest) ->
+	{min, Rest};
+decode_value(127, Rest) ->
+	{max, Rest};
 decode_value(18, <<Integer:32/little-signed, Rest/binary>>) ->
 	{Integer, Rest}.
