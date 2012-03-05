@@ -1372,7 +1372,7 @@ decode_value(12, <<Size:32/little-signed, Data/binary>> = Binary) when size(Bina
 decode_value(13, <<_Size:32/little-signed, Data/binary>>) ->
 	{Code, Rest} = decode_cstring(Data, <<>>),
 	{{code, Code}, Rest};
-decode_value(14, _Binary) ->
+decode_value(14, <<_Size:32/little-signed, Data/binary>>) ->
 	{Code, Rest} = decode_cstring(Data, <<>>),
 	{{symbol, Code}, Rest};
 decode_value(15, <<ComplSize:32/little, StrBSize:32/little,Rem/binary>>) ->
