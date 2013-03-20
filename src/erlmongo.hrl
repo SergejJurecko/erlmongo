@@ -55,7 +55,7 @@ loop_fields(Tuple, [], _, _, _) ->
 	
 % mongo	
 -define(QUER_OPT_NONE, 0).
--define(QUER_OPT_CURSOR, 2).
+-define(QUER_OPT_CURSOR, 1).
 -define(QUER_OPT_SLAVEOK, 4).
 -define(QUER_OPT_NOTIMEOUT, 16).
 

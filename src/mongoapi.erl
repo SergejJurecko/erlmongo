@@ -306,9 +306,9 @@ getMore(Rec, Cursor) when is_list(Rec); is_binary(Rec) ->
 		{done, <<>>} ->
 			{done, []};
 		{done, Result} ->
-			{done, mongodb:decoderec(Rec, Result)};
+			{done, mongodb:decode(Result)};
 		{ok, Result} ->
-			{ok, mongodb:decoderec(Rec, Result)}
+			{ok, mongodb:decode(Result)}
 	end;
 getMore(Rec, Cursor) ->
 	case mongodb:exec_getmore(Pool,name(element(1,Rec)), Cursor) of
