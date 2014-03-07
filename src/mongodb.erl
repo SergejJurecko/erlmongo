@@ -742,6 +742,23 @@ connection(#con{} = P,Index,Buf) ->
 			QBin = constr_query(Query,Index, Collection),
 			ok = gen_tcp:send(P#con.sock, QBin),
 			connection(P,Index+1,Buf);
+		ifmaster ->
+			erlang:send_after(1000,self(),ifmaster),
+			self() ! {find, self(), <<"admin.$cmd">>, #search{nskip = 0, ndocs = 1, criteria = mongodb:encode([{<<"ismaster">>, 1}])}},
+			connection(P,Index,Buf);
+		{query_result, _Src, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+			case catch mongodb:decode(Result) of
+				[Obj] ->
+					case proplists:get_value(<<"ismaster">>,Obj) of
+						true ->
+							ok;
+						false ->
+							ok
+					end;
+				E ->
+					exit(E)
+			end,
+			connection(P,Index,Buf);
 		{stop} ->
 			true;
 		{start, Pool, Source, Type, IP, Port} ->
@@ -751,8 +768,10 @@ connection(#con{} = P,Index,Buf) ->
 			{ok, Sock} = gen_tcp:connect(IP, Port, [binary, {packet, 0}, {active, true}, {keepalive, true}]),
 			case Type of
 				ifmaster ->
+					erlang:send_after(1000,self(),ifmaster),
 					self() ! {find, Source, <<"admin.$cmd">>, #search{nskip = 0, ndocs = 1, criteria = mongodb:encode([{<<"ismaster">>, 1}])}};
 				_ ->
+					erlang:send_after(1000,self(),{ping}),
 					case whereis(Pool) of
 						undefined ->
 							ok;
@@ -763,7 +782,6 @@ connection(#con{} = P,Index,Buf) ->
 					register(Pool,self()),
 					Source ! {conn_established, Pool, Type, self()}
 			end,
-			erlang:send_after(1000,self(),{ping}),
 			connection(#con{sock = Sock},1, <<>>);
 		{tcp_closed, _} ->
 			exit(stop)
