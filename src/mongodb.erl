@@ -1347,8 +1347,8 @@ decode_value(5, <<_Size:32/little-signed, 2:8/little, BinSize:32/little-signed, 
   	{{binary, 2, BinData}, Rest};
 decode_value(5, <<Size:32/little-signed, SubType:8/little, BinData:Size/binary-little-unit:8, Rest/binary>>) ->
   	{{binary, SubType, BinData}, Rest};
-decode_value(6, _Binary) ->
-  	throw(encountered_undefined);
+decode_value(6, Binary) ->
+  	{undefined,Binary};
 decode_value(8, <<0:8, Rest/binary>>) ->
 	{false, Rest};
 decode_value(8, <<1:8, Rest/binary>>) ->
