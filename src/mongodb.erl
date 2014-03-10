@@ -1263,6 +1263,8 @@ encode_element({Name, {MegaSecs, Secs, MicroSecs}}) when  is_integer(MegaSecs),i
 	<<9, Name/binary, 0, Millis:64/little-signed>>;
 encode_element({Name, null}) ->
 	<<10, Name/binary, 0>>;
+encode_element({Name,undefined}) ->
+	<<6,Name/binary,0>>;
 encode_element({Name, {regex, Expression, Flags}}) ->
 	ExpressionEncoded = encode_cstring(Expression),
 	FlagsEncoded = encode_cstring(Flags),
