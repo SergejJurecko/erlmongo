@@ -205,12 +205,12 @@ exec_cmd(Pool,DB, Cmd) ->
 			end
 	end.
 
-trysend(_,_,N) when N > 2 ->
+trysend(_,_,N) when N > 20 ->
 	not_connected;
 trysend(Pool,Query,N) ->
 	case catch Pool ! Query of
 		{'EXIT',_} ->
-			timer:sleep(1000),
+			timer:sleep(100),
 			trysend(Pool,Query,N+1);
 		_ ->
 			ok
@@ -733,9 +733,10 @@ connection(#con{} = P,Index,Buf) ->
 			ok = gen_tcp:send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{tcp, _, Bin} ->
-			% io:format("~p~n", [{byte_size(Bin), Buf}]),
+			ok = inet:setopts(P#con.sock, [{active, once}]),
 			connection(P,Index,readpacket(<<Buf/binary,Bin/binary>>));
 		{ping} ->
+			garbage_collect(),
 			erlang:send_after(1000,self(),{ping}),
 			Collection = <<"admin.$cmd">>,
 			Query = #search{nskip = 0, ndocs = 1, criteria = mongodb:encode([{<<"ping">>, 1}])},
@@ -743,6 +744,7 @@ connection(#con{} = P,Index,Buf) ->
 			ok = gen_tcp:send(P#con.sock, QBin),
 			connection(P,Index+1,Buf);
 		ifmaster ->
+			garbage_collect(),
 			erlang:send_after(1000,self(),ifmaster),
 			self() ! {find, self(), <<"admin.$cmd">>, #search{nskip = 0, ndocs = 1, criteria = mongodb:encode([{<<"ismaster">>, 1}])}},
 			connection(P,Index,Buf);
@@ -764,8 +766,7 @@ connection(#con{} = P,Index,Buf) ->
 		{start, Pool, Source, Type, IP, Port} ->
 			{A1,A2,A3} = now(),
 		    random:seed(A1, A2, A3),
-			% io:format("MDB ~p~n", [{Pool,IP,Port}]),
-			{ok, Sock} = gen_tcp:connect(IP, Port, [binary, {packet, 0}, {active, true}, {keepalive, true}]),
+			{ok, Sock} = gen_tcp:connect(IP, Port, [binary, {packet, 0}, {active, once}, {keepalive, true}]),
 			case Type of
 				ifmaster ->
 					erlang:send_after(1000,self(),ifmaster),
