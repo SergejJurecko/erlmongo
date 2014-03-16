@@ -815,36 +815,36 @@ constr_header(Len, ID, RespTo, OP) ->
 	<<(Len+16):32/little, ID:32/little, RespTo:32/little, OP:32/little>>.
 
 constr_update(U, Name) ->
-	Update = <<0:32, Name/binary, 0:8,
-	           (U#update.upsert):32/little, (U#update.selector)/binary, (U#update.document)/binary>>,
-	Header = constr_header(byte_size(Update), 0, 0, ?OP_UPDATE),
-	<<Header/binary, Update/binary>>.
+	Update = [<<0:32>>, Name, 0,
+	           <<(U#update.upsert):32/little>>, (U#update.selector), (U#update.document)],
+	Header = constr_header(iolist_size(Update), 0, 0, ?OP_UPDATE),
+	[Header, Update].
 
 constr_insert(U, Name) ->
-	Insert = <<0:32, Name/binary, 0:8, (U#insert.documents)/binary>>,
-	Header = constr_header(byte_size(Insert), 0, 0, ?OP_INSERT),
-	<<Header/binary, Insert/binary>>.
+	Insert = [<<0:32>>, Name, 0, (U#insert.documents)],
+	Header = constr_header(iolist_size(Insert), 0, 0, ?OP_INSERT),
+	[Header, Insert].
 
 constr_query(U, Index, Name) ->
-	Query = <<(U#search.opts):32/little, Name/binary, 0:8, (U#search.nskip):32/little, (U#search.ndocs):32/little,
-	  		  (U#search.criteria)/binary, (U#search.field_selector)/binary>>,
-	Header = constr_header(byte_size(Query), Index, 0, ?OP_QUERY),
-	<<Header/binary,Query/binary>>.
+	Query = [<<(U#search.opts):32/little>>, Name, 0, <<(U#search.nskip):32/little, (U#search.ndocs):32/little>>,
+	  		  (U#search.criteria), (U#search.field_selector)],
+	Header = constr_header(iolist_size(Query), Index, 0, ?OP_QUERY),
+	[Header,Query].
 
 constr_getmore(U, Index, Name) ->
-	GetMore = <<0:32, Name/binary, 0:8, (U#cursor.limit):32/little, (U#cursor.id):64/little>>,
-	Header = constr_header(byte_size(GetMore), Index, 0, ?OP_GET_MORE),
-	<<Header/binary, GetMore/binary>>.
+	GetMore = [<<0:32>>, Name, 0, <<(U#cursor.limit):32/little, (U#cursor.id):64/little>>],
+	Header = constr_header(iolist_size(GetMore), Index, 0, ?OP_GET_MORE),
+	[Header, GetMore].
 
 constr_delete(U, Name) ->
-	Delete = <<0:32, Name/binary, 0:8, 0:32, (U#delete.selector)/binary>>,
-	Header = constr_header(byte_size(Delete), 0, 0, ?OP_DELETE),
-	<<Header/binary, Delete/binary>>.
+	Delete = [<<0:32>>, Name, <<0:8, 0:32>>, (U#delete.selector)],
+	Header = constr_header(iolist_size(Delete), 0, 0, ?OP_DELETE),
+	[Header, Delete].
 
 constr_killcursors(U) ->
-	Kill = <<0:32, (byte_size(U#killc.cur_ids) div 8):32/little, (U#killc.cur_ids)/binary>>,
-	Header = constr_header(byte_size(Kill), 0, 0, ?OP_KILL_CURSORS),
-	<<Header/binary, Kill/binary>>.
+	Kill = [<<0:32, (byte_size(U#killc.cur_ids) div 8):32/little>>, (U#killc.cur_ids)],
+	Header = constr_header(iolist_size(Kill), 0, 0, ?OP_KILL_CURSORS),
+	[Header, Kill].
 
 
 
