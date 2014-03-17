@@ -543,6 +543,9 @@ init([]) ->
 
 gfs_proc(#gfs_state{mode = write} = P, Buf) ->
 	receive
+		{getinfo,Source} ->
+			Source ! {getinfo,self(),P#gfs_state.file},
+			gfs_proc(P,Buf);
 		{write, Bin} ->
 			Compl = <<Buf/binary, Bin/binary>>,
 			case true of
@@ -577,6 +580,9 @@ gfs_proc(#gfs_state{mode = write} = P, Buf) ->
 	end;
 gfs_proc(#gfs_state{mode = read} = P, Buf) ->
 	receive
+		{getinfo,Source} ->
+			Source ! {getinfo,self(),P#gfs_state.file},
+			gfs_proc(P,Buf);
 		{read, Source, RecN} ->
 			CSize = (P#gfs_state.file)#gfs_file.chunkSize,
 			FileLen = (P#gfs_state.file)#gfs_file.length,

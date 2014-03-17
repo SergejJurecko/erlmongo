@@ -532,6 +532,14 @@ gfsopts([_|T], S) ->
 gfsopts([], S) ->
 	S.
 
+gfsFileinfo(PID,{?MODULE,[_Pool,_DB]}) ->
+	PID ! {getinfo,self()},
+	receive
+		{getinfo,PID,I} ->
+			{ok,I}
+	after 1000 ->
+		{error,timeout}
+	end.
 gfsWrite(PID, Bin,{?MODULE,[_Pool,_DB]}) ->
 	PID ! {write, Bin},
 	ok.
