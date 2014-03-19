@@ -566,7 +566,7 @@ gfsOpen(Collection, R,{?MODULE,[Pool,DB]}) ->
 					[];
 				Result ->
 					[DR] = mongodb:decoderec(R, Result),
-					gfsOpen(Collection,DR)
+					gfsOpen(Collection,DR,{?MODULE,[Pool,DB]})
 			end;
 		_ ->
 			mongodb:startgfs(#gfs_state{pool = Pool,file = R, coll_name = Collection, collection = name(Collection,{?MODULE,[Pool,DB]}), db = DB, mode = read})
