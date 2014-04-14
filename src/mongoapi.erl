@@ -22,9 +22,9 @@ new(Pool,DB) ->
 %   use {name_of_record, undefined}
 % Example: recinfo(#mydoc{}, record_info(fields, mydoc))
 % 		   recinfo(mydoc, record_info(fields, mydoc))
-recinfo(RecName, Info,_) when is_atom(RecName) ->
+recinfo(RecName, Info) when is_atom(RecName) ->
 	put({recinfo, RecName}, Info);
-recinfo(Rec, Info,_) when is_tuple(Rec) ->
+recinfo(Rec, Info) when is_tuple(Rec) ->
 	put({recinfo, element(1,Rec)}, Info).
 
 name([_|_] = Collection,PMI) ->
