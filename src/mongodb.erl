@@ -1359,8 +1359,13 @@ decode_value(16, <<Integer:32/little-signed, Rest/binary>>) ->
 	{Integer, Rest};
 decode_value(18, <<Integer:64/little-signed, Rest/binary>>) ->
 	{Integer, Rest};
-decode_value(1, <<Double:64/little-signed-float, Rest/binary>>) ->
-	{Double, Rest};
+decode_value(1, <<DoubleBin:8/binary, Rest/binary>>) ->
+  try
+    <<Double:64/little-signed-float>> = DoubleBin,
+    {Double, Rest}
+  catch error:{badmatch, _Bin} ->
+    {0, Rest}
+  end;
 decode_value(2, <<Size:32/little-signed, Rest/binary>>) ->
 	StringSize = Size-1,
 	case Rest of
