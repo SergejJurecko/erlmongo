@@ -722,7 +722,7 @@ connection(#con{} = P,Index,Buf) ->
 			ok = gen_tcp:send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{update, Collection, [_|_] = Doc} ->
-			Bin = lists:foldl(fun(D,B) -> <<B/binary,(constr_update(D, Collection))/binary>> end, <<>>,Doc),
+			Bin = lists:map(fun(D) -> constr_update(D, Collection) end, Doc),
 			ok = gen_tcp:send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{delete, Col, D} ->
