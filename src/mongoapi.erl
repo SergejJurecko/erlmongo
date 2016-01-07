@@ -404,8 +404,13 @@ count(ColIn, Query,{?MODULE,[Pool,DB]}) ->
 			Cmd = [{plaintext, <<"count">>, Col}, {plaintext, <<"ns">>, DB}]
 	end,
 	case mongodb:exec_cmd(Pool,DB, Cmd) of
-		[{<<"n">>, Val}|_] ->
-			round(Val);
+		[_|_] = Obj ->
+			case proplists:get_value(<<"n">>,Obj) of
+				undefined ->
+					false;
+				Val ->
+					round(Val)
+			end;
 		_ ->
 			false
 	end.

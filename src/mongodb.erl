@@ -535,7 +535,7 @@ init([]) ->
 	{ok, HN} = inet:gethostname(),
 	<<HashedHN:3/binary,_/binary>> = erlang:md5(HN),
 	process_flag(trap_exit, true),
-	{A1,A2,A3} = now(),
+	{A1,A2,A3} = os:timestamp(),
     random:seed(A1, A2, A3),
 	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private]), hashed_hostn = HashedHN}}.
 
@@ -770,7 +770,7 @@ connection(#con{} = P,Index,Buf) ->
 		{stop} ->
 			true;
 		{start, Pool, Source, Type, IP, Port} ->
-			{A1,A2,A3} = now(),
+			{A1,A2,A3} = os:timestamp(),
 		    random:seed(A1, A2, A3),
 			{ok, Sock} = gen_tcp:connect(IP, Port, [binary, {packet, 0}, {active, once}, {keepalive, true}]),
 			case Type of
