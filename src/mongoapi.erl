@@ -1,5 +1,5 @@
 -module(mongoapi).
-% -export([save/1,findOne/2,findOne/1,find/1,find/2,find/3,find/4, update/2, insert/1]).
+-compile(nowarn_export_all).
 -compile(export_all).
 -include_lib("erlmongo.hrl").
 

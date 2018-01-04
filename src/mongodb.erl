@@ -359,7 +359,7 @@ start_connection(Name, #conn{conninfo = {multimaster, Srvrs}} = P) ->
 	case P#conn.pid of
 		undefined ->
 			Timer = P#conn.timer,
-			Index = random:uniform(tuple_size(Srvrs)),
+			Index = rand:uniform(tuple_size(Srvrs)),
 			{Adr,Port} = element(Index,Srvrs),
 			startcon(Name,P#conn.pid,readwrite,Adr,Port);
 		_ ->
@@ -535,8 +535,6 @@ init([]) ->
 	{ok, HN} = inet:gethostname(),
 	<<HashedHN:3/binary,_/binary>> = erlang:md5(HN),
 	process_flag(trap_exit, true),
-	{A1,A2,A3} = os:timestamp(),
-    random:seed(A1, A2, A3),
 	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private]), hashed_hostn = HashedHN}}.
 
 
@@ -770,8 +768,6 @@ connection(#con{} = P,Index,Buf) ->
 		{stop} ->
 			true;
 		{start, Pool, Source, Type, IP, Port} ->
-			{A1,A2,A3} = os:timestamp(),
-		    random:seed(A1, A2, A3),
 			{ok, Sock} = gen_tcp:connect(IP, Port, [binary, {packet, 0}, {active, once}, {keepalive, true}]),
 			case Type of
 				ifmaster ->
@@ -1172,6 +1168,8 @@ encode_element(A, _Style) ->
 % default behaviour
 encode_element({[_|_] = Name, Val}) ->
 	encode_element({list_to_binary(Name),Val});
+encode_element({Name, Val}) when is_atom(Name) ->
+	encode_element({atom_to_binary(Name, utf8),Val});
 encode_element({<<_/binary>> = Name, [{_,_}|_] = Items}) ->
 	Binary = encode(Items),
 	<<3, Name/binary, 0, Binary/binary>>;
@@ -1182,6 +1180,9 @@ encode_element({<<_/binary>> = Name, [_|_] = Value}) ->
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
 encode_element({Name, <<_/binary>> = Value}) ->
 	ValueEncoded = encode_cstring(Value),
+	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
+encode_element({Name, Value}) when is_atom(Value) ->
+	ValueEncoded = encode_cstring(atom_to_binary(Value,utf8)),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
 encode_element({Name, Value}) when is_integer(Value) ->
 	case true of
