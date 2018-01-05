@@ -1181,6 +1181,18 @@ encode_element({<<_/binary>> = Name, [_|_] = Value}) ->
 encode_element({Name, <<_/binary>> = Value}) ->
 	ValueEncoded = encode_cstring(Value),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
+encode_element({Name, null}) ->
+	<<10, Name/binary, 0>>;
+encode_element({Name,undefined}) ->
+	<<6,Name/binary,0>>;
+encode_element({Name,min}) ->
+	<<255, Name/binary, 0>>;
+encode_element({Name,max}) ->
+	<<127, Name/binary, 0>>;
+encode_element({Name, true}) ->
+	<<8, Name/binary, 0, 1:8>>;
+encode_element({Name, false}) ->
+	<<8, Name/binary, 0, 0:8>>;
 encode_element({Name, Value}) when is_atom(Value) ->
 	ValueEncoded = encode_cstring(atom_to_binary(Value,utf8)),
 	<<2, Name/binary, 0, (byte_size(ValueEncoded)):32/little-signed, ValueEncoded/binary>>;
@@ -1193,10 +1205,6 @@ encode_element({Name, Value}) when is_integer(Value) ->
 	end;
 encode_element({plaintext, Name, Val}) -> % exists for performance reasons.
 	<<2, Name/binary, 0, (byte_size(Val)+1):32/little-signed, Val/binary, 0>>;
-encode_element({Name, true}) ->
-	<<8, Name/binary, 0, 1:8>>;
-encode_element({Name, false}) ->
-	<<8, Name/binary, 0, 0:8>>;
 encode_element({Name, {oid, OID}}) ->
 	<<7, Name/binary, 0, (hex2dec(<<>>, OID))/binary>>;
 % list of lists = array
@@ -1275,10 +1283,6 @@ encode_element({Name, {MegaSecs, Secs, MicroSecs}}) when  is_integer(MegaSecs),i
 	Unix = MegaSecs * 1000000 + Secs,
 	Millis = Unix * 1000 + (MicroSecs div 1000),
 	<<9, Name/binary, 0, Millis:64/little-signed>>;
-encode_element({Name, null}) ->
-	<<10, Name/binary, 0>>;
-encode_element({Name,undefined}) ->
-	<<6,Name/binary,0>>;
 encode_element({Name, {regex, Expression, Flags}}) ->
 	ExpressionEncoded = encode_cstring(Expression),
 	FlagsEncoded = encode_cstring(Flags),
@@ -1294,10 +1298,6 @@ encode_element({Name, {code, Code}}) ->
 	<<13, Name/binary, 0, (byte_size(CodeEncoded)):32/little-signed, CodeEncoded/binary>>;
 encode_element({Name,{bignum,Value}}) ->
 	<<18, Name/binary, 0, Value:64/little-signed>>;
-encode_element({Name,min}) ->
-	<<255, Name/binary, 0>>;
-encode_element({Name,max}) ->
-	<<127, Name/binary, 0>>;
 % code with scope
 encode_element({Name, {code, C, S}}) ->
 	Code = encode_cstring(C),
