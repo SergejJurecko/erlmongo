@@ -2,6 +2,8 @@
 
 Erlmongo is a pretty complete Erlang driver for mongodb.
 
+All save/update/insert are safe and return if write succeeded.
+
 It supports maps and proplists as datatypes. Strings can be lists or binaries, but strings received from mongodb (as a result of find) will be binaries.
 
 Connections are pools (def. size 10) to master:
