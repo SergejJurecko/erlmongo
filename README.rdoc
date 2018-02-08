@@ -2,27 +2,14 @@
 
 Erlmongo is a pretty complete Erlang driver for mongodb.
 
-It supports records and proplists as datatypes. Strings can be lists or binaries, but strings received from mongodb (as a result of find) will be binaries.
+It supports maps and proplists as datatypes. Strings can be lists or binaries, but strings received from mongodb (as a result of find) will be binaries.
 
-Because of the way records work in Erlang, you need to call mongoapi:recinfo/2 before using any record, or define each record in erlmongo.hrl.
-
-When you're using a selector (picking which fields in the document you wish to get from mongodb), they have to be in the same sequence as they were defined in the record.
-For instance:
-  % -record(mydoc {name, i}).
-  % This will work
-  Mong:findOne(#mydoc{i = 10}, [#mydoc.name, #mydoc.i]).
-  % This will NOT work
-  Mong:findOne(#mydoc{i = 10}, [#mydoc.i, #mydoc.name]).
-
-WARNING: If you use modifier updates with {set,Value} ($set), do not use records if that value is a string that changes size (it should work for integers for instance). Mongo changes the document element sequence and this messes up record serialization.
-
-Connections are always single to the master:
+Connections are pools (def. size 10) to master:
 - master/slave - read and write from master
 - master/master - pick a master at random and use it for everything
 - replica pairs/sets - find out which is master and connect to it
-If your usage pattern is read heavy and want to use slaves for reading, connect to them with singleServer call. Don't write to slave connections or bad things will happen.
 
-Always use an atom for naming connections. The connection process will register itself on that name.
+Always use an atom for naming pools. Name will be used for a public named ets table.
 Runtime connection API:
 mongodb:singleServer/1,2
 mongodb:replicaPairs/3
@@ -31,79 +18,64 @@ mongodb:masterSlave/3
 mongodb:connect/1
 mongodb:sharded/2
 
-Connection info is saved in an application variable (erlmongo,connections) and updated with every call to: singleServer, masterSlave, replicaPairs, masterMaster, replicaSets, sharded and deleteConnection. If mongodb process crashes for some reason, connections will be restarted. Also if the application itself is stopped and started. You can add a connections variable to erlmongo.app file:
-  % def is name of connection, types can be: masterSlave,masterMaster or replicaPairs. This is how singleServer info is saved:
-  {env, [{def,{masterSlave,{"localhost",27017},{"localhost",27017}}}]},
-
 = Replica sets
   % List of servers does not have to be the entire list of the replica set.
   % Erlmongo will read the primary server from them and connect to it (even if not in the list).
-  mongodb:replicaSets(repl,["127.0.0.1:30000","127.0.0.1:30001"]).
-  mongodb:connect(repl).
+  mongodb:replicaSets(mypool,["127.0.0.1:30000","127.0.0.1:30001"]).
+  mongodb:connect(mypool).
 
 = Examples
   make
   erl
-  rr("erlmongo.hrl").
   application:start(erlmongo).
-  % Set mongodb server info. singleServer(PoolName) is the same as singleServer(PoolName,"localhost:27017")
+  % Set mongodb server info. singleServer(PoolName) is the same as singleServer(PoolName,10,"localhost:27017")
   mongodb:singleServer(def).
   mongodb:connect(def).
   % Create an interface for test database (it has to be a binary)
   Mong = mongoapi:new(def,<<"test">>).
 
   % Save a new document
-  Mong:save(#mydoc{name = "MyDocument", i = 10}).
-  % Return the document, but only the "i" field (+ _id which always gets returned)
-  Mong:findOne(#mydoc{i = 10}, [#mydoc.name]).
+  Mong:save("mycollection",#{name => "MyDocument", i => 10}).
+  % Return the document in map form
+  Mong:findOne("mycollection", #{i => 10}, map).
 
   % With proplists
   Mong:save("mydoc", [{"name", "MyDocument"}, {"i", 10}]).
+  % Return only _id and name field
   Mong:findOne("mydoc", [{"i", 10}], [{"name", 1}]).
-
-  % Switch to mochijson's style proplists (string = binary, array = list, no list-coded strings)
-  Mong:set_encode_style(mochijson),
-  Mong:save("mydoc", [{<<"name">>, <<"2-dim array">>}, {<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
-
 
   % Set Index. First parameter is so that the driver knows what collection
   %  we mean. If you have an already constructed record laying around use that.
   %  No need to construct a new record just so the driver can read the name.
   % Second parameter the index we wish to create. 1 = ascending, -1 = descending.
-  Mong:ensureIndex(#mydoc{}, [{#mydoc.i, 1}, {#mydoc.name, -1}])
+  Mong:ensureIndex("mycollection", [{#mydoc.i, 1}, {#mydoc.name, -1}])
 
   % Find examples:
 
   % Or
-  M:find("mydoc",[{'or',[{"a",1},{"i",11}]}],undefined,0,100).
+  M:find("mycollection",[{'or',[{"a",1},{"i",11}]}],undefined,0,100).
 
   % Parameters: Search criteria, field selector, docs to skip, docs to return
-  Mong:find(#mydoc{i = 4}, [#mydoc.name], 0, 0).
-  % Same thing but with #search record that provides default parameters
-  Mong:find(#search{criteria = #mydoc{i = 4}, field_selector = [#mydoc.name]}).
+  Mong:find("mycollection",#{i => 4}, #{name => 1}, 0, 10).
 
   % Find with options
-  Mong:findOpt(#mydoc{i = 4}, undefined, [explain], 0, 0).
-  % Same thing as above
-  Mong:findOpt(#search{criteria = #mydoc{i = 4}}, [explain]).
-  % Also the same, with proplists
-  Mong:findOpt("mydoc", #search{criteria = [{"i",  4}]}, [explain]).
+  Mong:findOpt("mycollection", #{i => 4}, undefined, [explain], 0, 0).
 
   % Embedded records
-  Mong:save(#mydoc{name = "zembedom", i = 10, address = #address{city = "ny", street = "some", country = "us"}}).
-  Mong:find(#mydoc{address = #address{city = "la"}}, undefined, 0, 0).
+  Mong:save("mycollection",#{name => "zembedom", i => 10, address = #{city => "ny", street => "some", country => "us"}}).
+  Mong:find("mycollection",#{address => #{city => "la"}}, undefined, 0, 0).
 
   % Advanced queries (supported: gt, lt, gte, lte, ne, in, nin, all, size, exists):
   % Documents with even i
-  Mong:find(#mydoc{i = {mod, 2, 0}}, undefined, 0,0).
+  Mong:find("mycollection",#{i => {mod, 2, 0}}, undefined, 0,0).
   % Documents with i larger than 2:
-  Mong:find(#mydoc{i = {gt, 2}}, undefined, 0,0).
+  Mong:find("mycollection", #{i => {gt, 2}}, undefined, 0,0).
   % Documents with i between 2 and 5:
-  Mong:find(#mydoc{i = {in, {gt, 2}, {lt, 5}}}, undefined, 0,0).
+  Mong:find("mycollection", #{i => {in, {gt, 2}, {lt, 5}}}, undefined, 0,0).
   % in example:
-  Mong:find(#mydoc{tags = {in, [2,3,4]}}, undefined, 0,0).
+  Mong:find("mycollection", #{tags => {in, [2,3,4]}}, undefined, 0,0).
   % exists example:
-  Mong:find(#mydoc{tags = {exists, false}}, undefined, 0,0).
+  Mong:find("mycollection", #{tags => {exists, false}}, undefined, 0,0).
 
   % findandmodify command
   Mong:runCmd([{"findandmodify", "collectionname"},{"query", [{"fn","onmeta.flv"},{"ch","somechan"}]},{"remove",1}]).
@@ -127,7 +99,7 @@ Connection info is saved in an application variable (erlmongo,connections) and u
   Mong:gfsClose(PID).
 
 = Supported Data types and modifiers
-Look at mongodb:encode_element/1
+Look at bson:encode_element/1
 
 = Switching to mochijson's style proplists
 Mochijson library has a different string/list encoding convention:
@@ -196,14 +168,6 @@ GridFS
 * gfsDelete
 * gfsFlush
 * gfsClose
-
-== Building
-erl -make
-
-or with autotools
-./configure
-make
-make install
 
 == Author
  Sergej Jurečko
