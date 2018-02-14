@@ -243,12 +243,12 @@ decode_value(_F,2, <<Size:32/little-signed, Rest/binary>>) ->
 decode_value(Format,3, <<Size:32/little-signed, Rest/binary>> = Binary) when byte_size(Binary) >= Size ->
   	decode_next(Format,Rest, []);
 decode_value(Format,4, <<Size:32/little-signed, Data/binary>> = Binary) when byte_size(Binary) >= Size ->
-  	{Array, Rest} = decode_next(proplist,Data, []),
+  	{Array, Rest} = decode_next(Format,Data, []),
 		case Format of
 			proplist ->
 				{{array,[Value || {_Key, Value} <- Array]}, Rest};
 			map ->
-				{[Value || {_Key, Value} <- Array], Rest}
+				{[Value || {_Key, Value} <- maps:to_list(Array)], Rest}
 		end;
 decode_value(_F,5, <<_Size:32/little-signed, 2:8/little, BinSize:32/little-signed, BinData:BinSize/binary-little-unit:8, Rest/binary>>) ->
   	{{binary, 2, BinData}, Rest};
