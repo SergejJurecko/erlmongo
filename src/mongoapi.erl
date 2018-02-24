@@ -26,7 +26,7 @@ remove(Col, Selector,{?MODULE,[Pool,DB]}) ->
 	mongodb:exec_delete(Pool,name(Col,{?MODULE,[Pool,DB]}), #delete{selector = bson:encode(Selector)}).
 
 
-save(Collection, L,{?MODULE,[Pool,DB]}) ->
+save(Collection, L, {?MODULE,[Pool,DB]}) ->
 	% Style = case get({Pool, DB, style}) of
 	% 	undefined -> default;
 	% 	T -> T
@@ -34,7 +34,12 @@ save(Collection, L,{?MODULE,[Pool,DB]}) ->
 	case getid(L) of
 		false ->
 			OID = mongodb:create_id(),
-			L1 = [{<<"_id">>, {oid, OID}}|L],
+			case L of
+				#{} ->
+					L1 = L#{<<"_id">> => {oid, OID}};
+				_ ->
+					L1 = [{<<"_id">>, {oid, OID}}|L]
+			end,
 			case insert(Collection, L1, {?MODULE,[Pool,DB]}) of
 				ok ->
 					{ok,{oid, OID}};
@@ -51,7 +56,7 @@ save(Collection, L,{?MODULE,[Pool,DB]}) ->
 			end
 	end.
 
-getid([_|_] = L) ->
+getid(L) when is_list(L) ->
 	lists:keyfind(<<"_id">>,1,L);
 getid(#{} = L) ->
 	case maps:get(<<"_id">>,L,false) of
