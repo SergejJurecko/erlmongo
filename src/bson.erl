@@ -145,6 +145,10 @@ encode_element({Name, {MegaSecs, Secs, MicroSecs}}) when  is_integer(MegaSecs),i
 	Unix = MegaSecs * 1000000 + Secs,
 	Millis = Unix * 1000 + (MicroSecs div 1000),
 	<<9, Name/binary, 0, Millis:64/little-signed>>;
+encode_element({Name, {{Yr,Mo,Dy},{Hr,Mi,Sd}}=Value})
+		when is_integer(Yr),is_integer(Mo),is_integer(Dy), is_integer(Hr),is_integer(Mi),is_integer(Sd) ->
+	Millis = calendar:datetime_to_gregorian_seconds(Value) * 1000,
+	<<9, Name/binary, 0, Millis:64/little-signed>>;
 encode_element({Name, {regex, Expression, Flags}}) ->
 	ExpressionEncoded = encode_cstring(Expression),
 	FlagsEncoded = encode_cstring(Flags),
