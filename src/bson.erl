@@ -31,6 +31,8 @@ encode_element(A, _Style) ->
 % default behaviour
 encode_element({[_|_] = Name, Val}) ->
 	encode_element({list_to_binary(Name),Val});
+encode_element({'or',[{_,_}|_] = L}) ->
+	encode_element({<<"$or">>,{array,[[Obj] || Obj <- L]}});
 encode_element({Name, Val}) when is_atom(Name) ->
 	encode_element({atom_to_binary(Name, utf8),Val});
 encode_element({<<_/binary>> = Name, #{} = Items}) ->
@@ -126,8 +128,6 @@ encode_element({Name, {all, Val}}) ->
 	encode_element({Name, [{<<"$all">>, {array, Val}}]});
 encode_element({Name, {size, Val}}) ->
 	encode_element({Name, [{<<"$size">>, Val}]});
-encode_element({'or',[{_,_}|_] = L}) ->
-	encode_element({<<"$or">>,{array,[[Obj] || Obj <- L]}});
 encode_element({Name, {'not', Val}}) ->
 	encode_element({Name, [{<<"$not">>, Val}]});
 encode_element({Name, {exists, Val}}) ->
