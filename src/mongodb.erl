@@ -225,7 +225,7 @@ trysend(Pool,Query,Type) when is_atom(Pool) ->
 		0 ->
 			not_connected;
 		_ ->
-			Pos = rand:uniform(Sz-1),
+			Pos = rand:uniform(Sz)-1,
 			case (catch ets:slot(Pool,Pos)) of
 				[{Pid}] ->
 					trysend(Pid,Query,Type);
