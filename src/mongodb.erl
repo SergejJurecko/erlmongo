@@ -3,13 +3,13 @@
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 % API
 -export([connect/1, connect/2, is_connected/1,deleteConnection/1,
-		 singleServer/2, singleServer/3, singleServer/1,
-		 masterSlave/3, masterSlave/4,
-		 masterMaster/3, masterMaster/4,
-		 replicaPairs/3, replicaPairs/4,
+		 singleServer/2, singleServer/3, singleServer/1, singleServer/5,
+		 masterSlave/3, masterSlave/4, masterSlave/6,
+		 masterMaster/3, masterMaster/4, masterMaster/6,
+		 replicaPairs/3, replicaPairs/4, replicaPairs/6,
 		 datetime_to_now/1,
-		 replicaSets/2, replicaSets/3,
-		 sharded/2, sharded/3]).
+		 replicaSets/2, replicaSets/3, replicaSets/5,
+		 sharded/2, sharded/3, sharded/5]).
 % Internal
 -export([exec_cursor/3, exec_delete/3, exec_cmd/3, exec_insert/3, exec_find/3, exec_update/3, exec_getmore/3,
           ensureIndex/3, clearIndexCache/0, create_id/0, startgfs/1]).
@@ -64,49 +64,58 @@ is_connected(Pool) when is_atom(Pool) ->
 singleServer(Pool) ->
 	singleServer(Pool, 10).
 singleServer(Pool, Size) when is_atom(Pool), is_integer(Size) ->
-	% gen_server:cast(?MODULE, {conninfo,Pool, {replicaPairs, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
-	gen_server:cast(?MODULE, {conninfo,Pool, Size, {masterSlave, {"localhost",?MONGO_PORT}, {"localhost",?MONGO_PORT}}}).
+	singleServer(Pool, Size, "localhost:"++integer_to_list(?MONGO_PORT)).
 singleServer(Pool, Size, [_|_] = Addr) when is_atom(Pool), is_integer(Size) ->
+	singleServer(Pool, Size, Addr, undefined, undefined).
+singleServer(Pool, Size, [_|_] = Addr, Username, Pw) when is_atom(Pool), is_integer(Size) ->
 	[IP,Port] = parse_addr(Addr),
-	gen_server:cast(?MODULE, {conninfo,Pool, Size, [{IP,Port}, {IP,Port}]}).
-	% gen_server:cast(?MODULE, {conninfo,Pool, {masterSlave, {IP,Port}, {IP,Port}}}).
+	gen_server:cast(?MODULE, {conninfo, Pool, Size, Username, Pw, [{IP,Port}, {IP,Port}]}).
 
 masterSlave(Pool, M, S) ->
 	masterSlave(Pool, 10, M, S).
-masterSlave(Pool, Size, [_|_] = MasterAddr, [_|_] = SlaveAddr) when is_atom(Pool), is_integer(Size) ->
+masterSlave(Pool, Size, [_|_] = MasterAddr, [_|_] = SlaveAddr) ->
+	masterSlave(Pool, Size, MasterAddr, SlaveAddr, undefine, undefined).
+masterSlave(Pool, Size, [_|_] = MasterAddr, [_|_] = SlaveAddr, Username, Pw) when is_atom(Pool), is_integer(Size) ->
 	[IP1,Port1] = parse_addr(MasterAddr),
 	[IP2,Port2] = parse_addr(SlaveAddr),
-	gen_server:cast(?MODULE, {conninfo,Pool, Size, [{IP1,Port1}, {IP2,Port2}]}).
+	gen_server:cast(?MODULE, {conninfo,Pool, Size, Username, Pw, [{IP1,Port1}, {IP2,Port2}]}).
 	% gen_server:cast(?MODULE, {conninfo,Pool, Size, {masterSlave, {IP1,Port1}, {IP2,Port2}}}).
 
 masterMaster(Pool, A1, A2) ->
 	masterMaster(Pool, 10, A1, A2).
 masterMaster(Pool,Size,[_|_] = Addr1, [_|_] = Addr2) ->
-	sharded(Pool,Size,[Addr1,Addr2]).
+	sharded(Pool,Size,[Addr1,Addr2], undefined, undefined).
+masterMaster(Pool, Size, A1, A2, Us, Pw) ->
+	sharded(Pool, Size, [A1, A2], Us, Pw).
 
 sharded(Pool, L) ->
 	sharded(Pool, 10, L).
-sharded(Pool, Size, [[_|_]|_] = L) when is_atom(Pool), is_integer(Size) ->
+sharded(Pool, Size, L) ->
+	sharded(Pool, Size, L, undefined, undefined).
+sharded(Pool, Size, [[_|_]|_] = L, Us, Pw) when is_atom(Pool), is_integer(Size) ->
 	SL = [list_to_tuple(parse_addr(A)) || A <- L],
-	gen_server:cast(?MODULE, {conninfo,Pool, Size, SL});
-	% gen_server:cast(?MODULE, {conninfo,Pool, Size, {multimaster, list_to_tuple(SL)}});
-sharded(Pool, Size, [_|_] = L) ->
-	sharded(Pool, Size,[L]).
+	gen_server:cast(?MODULE, {conninfo,Pool, Size, Us, Pw, SL});
+sharded(Pool, Size, [_|_] = L, Us, Pw) ->
+	sharded(Pool, Size,[L], Us, Pw).
 
 replicaPairs(Pool, A1, A2) ->
 	replicaPairs(Pool, 10, A1, A2).
-replicaPairs(Pool, Size, [_|_] = Addr1, [_|_] = Addr2) when is_atom(Pool) ->
+replicaPairs(Pool, Size, [_|_] = Addr1, [_|_] = Addr2) ->
+	replicaPairs(Pool, Size, Addr1, Addr2, undefined, undefined).
+replicaPairs(Pool, Size, [_|_] = Addr1, [_|_] = Addr2, Us, Pw) when is_atom(Pool) ->
 	[IP1,Port1] = parse_addr(Addr1),
 	[IP2,Port2] = parse_addr(Addr2),
 	% gen_server:cast(?MODULE, {conninfo,Pool, Size, {replicaPairs, {IP1,Port1}, {IP2,Port2}}}).
-	gen_server:cast(?MODULE, {conninfo,Pool, Size, [{IP1,Port1}, {IP2,Port2}]}).
+	gen_server:cast(?MODULE, {conninfo,Pool, Size, Us, Pw, [{IP1,Port1}, {IP2,Port2}]}).
 % Takes a list of "Address:Port"
 replicaSets(Pool,L) ->
 	replicaSets(Pool,10,L).
-replicaSets(Pool,Size,L) when is_atom(Pool), is_integer(Size) ->
+replicaSets(Pool,Size,L) ->
+	replicaSets(Pool, Size, L, undefined, undefined).
+replicaSets(Pool,Size,L, Us, Pw) when is_atom(Pool), is_integer(Size) ->
 	LT = [list_to_tuple(parse_addr(S)) || S <- L],
 	% gen_server:cast(?MODULE,{conninfo,Pool,Size,{replicaSets,LT}}).
-	gen_server:cast(?MODULE,{conninfo,Pool,Size,LT}).
+	gen_server:cast(?MODULE,{conninfo,Pool,Size,Us,Pw,LT}).
 
 parse_addr(A) ->
 	case string:tokens(A,":") of
@@ -269,7 +278,7 @@ startgfs(P) ->
 %   replicaPairs: read = write = master
 %   masterMaster: pick one at random
 % timer is reconnect timer if some connection is missing
--record(pool, {name, size = 0, info, cb, style=default}).
+-record(pool, {name, size = 0, info, cb, style=default, us, pw}).
 % indexes is ensureIndex cache (an ets table).
 % pids: #{PID => {PoolName,[active|init|closing]}}
 % retry: [PoolName1,PoolName2]
@@ -318,12 +327,12 @@ handle_cast({ensure_index_store, DB,Bin}, P) ->
 handle_cast({clear_indexcache}, P) ->
 	ets:delete_all_objects(P#mngd.indexes),
 	{noreply, P};
-handle_cast({conninfo, Pool, Size, Info}, P) ->
+handle_cast({conninfo, Pool, Size, Us, Pw, Info}, P) ->
 	?DBG("conninfo ~p", [{Pool,Size,Info}]),
 	Pools = case lists:keyfind(Pool,#pool.name,P#mngd.pools) of
 		false ->
 			ets:new(Pool,[named_table,public,set]),
-			[#pool{name = Pool, size = Size, info = Info}|P#mngd.pools];
+			[#pool{name = Pool, size = Size, info = Info, us = Us, pw = Pw}|P#mngd.pools];
 		#pool{info = OldInfo} when OldInfo == Info ->
 			P#mngd.pools;
 		Existing ->
@@ -331,7 +340,7 @@ handle_cast({conninfo, Pool, Size, Info}, P) ->
 	end,
 	handle_cast(save_connections,P#mngd{pools = Pools});
 handle_cast(save_connections,P) ->
-	L = [{Pool#pool.name, Pool#pool.size, Pool#pool.info} || Pool <- P#mngd.pools],
+	L = [{Pool#pool.name, Pool#pool.size, Pool#pool.info, Pool#pool.us, Pool#pool.pw} || Pool <- P#mngd.pools],
 	application:set_env(erlmongo,connections,L),
 	{noreply, P};
 handle_cast({start_connection, Pool,CB}, P) ->
@@ -357,11 +366,11 @@ handle_cast({print_info}, P) ->
 handle_cast(_, P) ->
 	{noreply, P}.
 
-startcon(Name, Addr, Port) when is_list(Port) ->
-	startcon(Name, Addr, list_to_integer(Port));
-startcon(Name, Addr, Port) ->
+startcon(Name, Addr, Port, Us, Pw) when is_list(Port) ->
+	startcon(Name, Addr, list_to_integer(Port), Us, Pw);
+startcon(Name, Addr, Port, Us, Pw) ->
 	{PID,_} = spawn_monitor(fun() -> connection(true) end),
-	PID ! {start, Name, self(), Addr, Port},
+	PID ! {start, Name, self(), Addr, Port, Us, Pw},
 	PID.
 
 start_connection(P, PoolName, PI) ->
@@ -374,7 +383,7 @@ start_connection(P, PoolName, PI) ->
 		_ when ExLen < PI#pool.size ->
 			Additional = [begin
 					{IP,Port} = lists:nth(rand:uniform(LenServers), Servers),
-					PID = startcon(PoolName, IP, Port),
+					PID = startcon(PoolName, IP, Port, PI#pool.us, PI#pool.pw),
 					{PID, {PoolName,?STATE_INIT}}
 				end	|| _ <- lists:seq(1,PI#pool.size - ExLen)],
 			P#mngd{pids = maps:merge(P#mngd.pids, maps:from_list(Additional))};
@@ -481,7 +490,8 @@ handle_info({query_result, Src, <<_:20/binary, Res/binary>>}, P) ->
 								Prim ->
 									?DBG("Connecting to primary ~p", [Prim]),
 									[Addr,Port] = string:tokens(binary_to_list(Prim),":"),
-									PID = startcon(Pool, Addr,Port),
+									PI = lists:keyfind(Pool,#pool.name, P#mngd.pools),
+									PID = startcon(Pool, Addr,Port, PI#pool.us, PI#pool.pw),
 									{noreply, P#mngd{pids = maps:remove(Src,maps:put(PID,{Pool,init},P#mngd.pids))}}
 							end
 					end;
@@ -525,7 +535,7 @@ init([]) ->
 	erlang:send_after(?RECONNECT_DELAY, self(),reconnect),
 	case application:get_env(erlmongo,connections) of
 		{ok, L} ->
-			[gen_server:cast(?MODULE,{conninfo, Pool, Sz, Info}) || {Pool,Sz,Info} <- L],
+			[gen_server:cast(?MODULE,{conninfo, Pool, Sz, Info, Us, Pw}) || {Pool,Sz,Info,Us,Pw} <- L],
 			[connect(Pool) || {Pool,_,_} <- L];
 		_ ->
 			true
@@ -682,7 +692,8 @@ cursorcleanup(P) ->
 	end.
 
 
--record(con, {sock, die = false, die_attempt_cnt = 0}).
+-record(con, {sock, die = false, die_attempt_cnt = 0, auth}).
+-record(auth, {step = 0, us, pw, source, nonce, first_msg, sig, conv_id}).
 con_candie() ->
 	[Pid || {Ind,Pid} <- get(), is_integer(Ind) andalso is_pid(Pid)] == [].
 % Proc. d.:
@@ -751,12 +762,12 @@ connection(#con{} = P,Index,Buf) ->
 				_ ->
 					connection(P#con{die = true})
 			end;
-		{start, _Pool, Source, IP, Port} ->
+		{start, _Pool, Source, IP, Port, Us, Pw} ->
 			{ok, Sock} = gen_tcp:connect(IP, Port, [binary, {packet, 0}, {active, true}, {keepalive, true}], 1000),
-			self() ! {find, Source, <<"admin.$cmd">>,
-				#search{nskip = 0, ndocs = 1, criteria = bson:encode([{<<"ismaster">>, 1}])}},
 			erlang:send_after(1000,self(),{ping}),
-			connection(#con{sock = Sock},1, <<>>);
+			connection(#con{sock = Sock, auth = init_auth(Source, Us, Pw)},1, <<>>);
+		{query_result, _Me, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Packet/binary>>} ->
+			connection(P#con{auth = scram_step(P#con.auth, Packet)},Index, Buf);
 		{tcp_closed, _} ->
 			exit(tcp_closed)
 		after 5000 ->
@@ -774,6 +785,14 @@ connection(#con{} = P,Index,Buf) ->
 					connection(P)
 			end
 	end.
+
+init_auth(Source, undefined,undefined) ->
+	self() ! {find, Source, <<"admin.$cmd">>,
+		#search{nskip = 0, ndocs = 1, criteria = bson:encode([{<<"ismaster">>, 1}])}},
+	undefined;
+init_auth(Source, Us,Pw) ->
+	scram_first_step_start(#auth{us = Us, pw = Pw, source = Source}).
+
 readpacket(<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/little, Body/binary>> = Bin) ->
 	BodySize = ComplSize-16,
 	case Body of
@@ -832,3 +851,141 @@ constr_killcursors(U) ->
 	Kill = <<0:32, (byte_size(U#killc.cur_ids) div 8):32/little, (U#killc.cur_ids)/binary>>,
 	Header = constr_header(byte_size(Kill), 0, 0, ?OP_KILL_CURSORS),
 	[Header, Kill].
+
+% Taken and modified from
+% https://github.com/comtihon/mongodb-erlang/blob/master/src/connection/mc_auth_logic.erl
+
+%% @private
+scram_first_step_start(P) ->
+  RandomBString = base64:encode(crypto:strong_rand_bytes(32)),
+  FirstMessage = compose_first_message(P#auth.us, RandomBString),
+  Message = <<"n,,", FirstMessage/binary>>,
+	Doc = [{<<"saslStart">>, 1},
+		{<<"mechanism">>, <<"SCRAM-SHA-1">>},
+		{<<"payload">>, {binary, Message}},
+		{<<"autoAuthorize">>, 1}],
+	self() ! {find, self(), <<"admin.$cmd">>,
+		#search{nskip = 0, ndocs = 1, criteria = bson:encode(Doc)}},
+	P#auth{nonce = RandomBString, first_msg = FirstMessage, step = 1}.
+
+scram_step(#auth{step = 1} = P, Res1) ->
+  % {true, Res} = mc_worker_api:sync_command(Socket, <<"admin">>,
+  %   {<<"saslStart">>, 1, <<"mechanism">>, <<"SCRAM-SHA-1">>, <<"payload">>, {bin, bin, Message}, <<"autoAuthorize">>, 1}, SetOpts),
+	[Res] = bson:decode(map, Res1),
+	ConversationId = maps:get(<<"conversationId">>, Res, {}),
+  Payload = maps:get(<<"payload">>, Res),
+  scram_second_step_start(P, Payload, ConversationId);
+scram_step(#auth{step = 2} = P, Res1) ->
+	[Res] = bson:decode(map, Res1),
+	scram_third_step_start(P, base64:encode(P#auth.sig), Res);
+scram_step(#auth{step = 4} = P, Res1) ->
+	[#{<<"done">> := true}] = bson:decode(map, Res1),
+	init_auth(P#auth.source, undefined, undefined).
+
+
+%% @private
+scram_second_step_start(P, {binary, _, Decoded} = _Payload, ConversationId) ->
+  {Signature, ClientFinalMessage} = compose_second_message(Decoded, P#auth.us, P#auth.pw, P#auth.nonce, P#auth.first_msg),
+  % {true, Res} = mc_worker_api:sync_command(Socket, <<"admin">>, {<<"saslContinue">>, 1, <<"conversationId">>, ConversationId,
+  %   <<"payload">>, {bin, bin, ClientFinalMessage}}, SetOpts),
+	Doc = [{<<"saslContinue">>, 1},
+	{<<"conversationId">>, ConversationId},
+  {<<"payload">>, {binary,  ClientFinalMessage}}],
+	self() ! {find, self(), <<"admin.$cmd">>,
+		#search{nskip = 0, ndocs = 1, criteria = bson:encode(Doc)}},
+	P#auth{sig = Signature, step = 2, conv_id = ConversationId}.
+
+%% @private
+scram_third_step_start(P, ServerSignature, Response) ->
+  {binary, _, Payload} = maps:get(<<"payload">>, Response),
+  Done = maps:get(<<"done">>, Response, false),
+  ParamList = parse_server_responce(Payload),
+  {_,ServerSignature} = lists:keyfind(<<"v">>,1, ParamList),
+  scram_forth_step_start(P, Done).
+
+%% @private
+scram_forth_step_start(P, true) -> init_auth(P, undefined, undefined);
+scram_forth_step_start(P, false) ->
+	Doc = [{<<"saslContinue">>, 1},
+	{<<"conversationId">>, P#auth.conv_id},
+	{<<"payload">>, {binary, <<>>}}],
+	self() ! {find, self(), <<"admin.$cmd">>,
+			#search{nskip = 0, ndocs = 1, criteria = bson:encode(Doc)}},
+	P#auth{step = 4}.
+
+%% @private
+compose_first_message(Login, RandomBString) ->
+  UserName = <<<<"n=">>/binary, (encode_name(Login))/binary>>,
+  Nonce = <<<<"r=">>/binary, RandomBString/binary>>,
+  <<UserName/binary, <<",">>/binary, Nonce/binary>>.
+
+encode_name(Name) ->
+  Comma = re:replace(Name, <<"=">>, <<"=3D">>, [{return, binary}]),
+	re:replace(Comma, <<",">>, <<"=2C">>, [{return, binary}]).
+
+%% @private
+compose_second_message(Payload, Login, Password, RandomBString, FirstMessage) ->
+  ParamList = parse_server_responce(Payload),
+  {_,R} = lists:keyfind(<<"r">>,1, ParamList),
+  Nonce = <<"r=", R/binary>>,
+	RandSz = byte_size(RandomBString),
+	<<RandomBString:RandSz/binary,_/binary>> = R,
+  {_,S} = lists:keyfind(<<"s">>,1, ParamList),
+  I = binary_to_integer(element(2,lists:keyfind(<<"i">>,1, ParamList))),
+  SaltedPassword = pbkdf2(pw_hash(Login, Password), base64:decode(S), I, 20),
+  ChannelBinding = <<"c=", (base64:encode(<<"n,,">>))/binary>>,
+  ClientFinalMessageWithoutProof = <<ChannelBinding/binary, ",", Nonce/binary>>,
+  AuthMessage = <<FirstMessage/binary, ",", Payload/binary, ",", ClientFinalMessageWithoutProof/binary>>,
+  ServerSignature = generate_sig(SaltedPassword, AuthMessage),
+  Proof = generate_proof(SaltedPassword, AuthMessage),
+  {ServerSignature, <<ClientFinalMessageWithoutProof/binary, ",", Proof/binary>>}.
+
+pw_hash(Username, Password) ->
+	bson:dec2hex(<<>>, crypto:hash(md5, [Username, <<":mongo:">>, Password])).
+
+%% @private
+generate_proof(SaltedPassword, AuthMessage) ->
+  ClientKey = crypto:hmac(sha, SaltedPassword, <<"Client Key">>),
+  StoredKey = crypto:hash(sha, ClientKey),
+  Signature = crypto:hmac(sha, StoredKey, AuthMessage),
+  ClientProof = xorKeys(ClientKey, Signature, <<>>),
+  <<"p=", (base64:encode(ClientProof))/binary>>.
+
+%% @private
+generate_sig(SaltedPassword, AuthMessage) ->
+  ServerKey = crypto:hmac(sha, SaltedPassword, "Server Key"),
+  crypto:hmac(sha, ServerKey, AuthMessage).
+
+%% @private
+xorKeys(<<>>, _, Res) -> Res;
+xorKeys(<<FA, RestA/binary>>, <<FB, RestB/binary>>, Res) ->
+  xorKeys(RestA, RestB, <<Res/binary, <<(FA bxor FB)>>/binary>>).
+
+%% @private
+parse_server_responce(Responce) ->
+  ParamList = binary:split(Responce, <<",">>, [global]),
+  lists:map(
+    fun(Param) ->
+      [K, V] = binary:split(Param, <<"=">>),
+      {K, V}
+end, ParamList).
+
+pbkdf2(Password, Salt, Iterations, DerivedLength) ->
+	pbkdf2(Password, Salt, Iterations, DerivedLength, 1, []).
+pbkdf2(Password, Salt, Iterations, DerivedLength, BlockIndex, Acc) ->
+	case iolist_size(Acc) > DerivedLength of
+		true ->
+			<<Bin:DerivedLength/binary, _/binary>> = iolist_to_binary(lists:reverse(Acc)),
+			Bin;
+		false ->
+			Block = pbkdf2(Password, Salt, Iterations, BlockIndex, 1, <<>>, <<>>),
+			pbkdf2(Password, Salt, Iterations, DerivedLength, BlockIndex + 1, [Block | Acc])
+end.
+pbkdf2(_Password, _Salt, Iterations, _BlockIndex, Iteration, _Prev, Acc) when Iteration > Iterations ->
+	Acc;
+pbkdf2(Password, Salt, Iterations, BlockIndex, 1, _Prev, _Acc) ->
+	InitialBlock = crypto:hmac(sha,Password, <<Salt/binary, BlockIndex:32/integer>>),
+	pbkdf2(Password, Salt, Iterations, BlockIndex, 2, InitialBlock, InitialBlock);
+pbkdf2(Password, Salt, Iterations, BlockIndex, Iteration, Prev, Acc) ->
+	Next = crypto:hmac(sha,Password, Prev),
+	pbkdf2(Password, Salt, Iterations, BlockIndex, Iteration + 1, Next, crypto:exor(Next, Acc)).
