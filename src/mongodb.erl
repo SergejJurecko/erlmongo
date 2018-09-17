@@ -58,8 +58,8 @@ deleteConnection(Pool) when is_atom(Pool) ->
 	gen_server:cast(?MODULE,{delete_connection,Pool}).
 
 is_connected(Pool) when is_atom(Pool) ->
-	% gen_server:call(?MODULE, {is_connected,Pool}).
-	ets:info(Pool,size) > 0.
+	Sz = ets:info(Pool,size),
+	is_integer(Sz) andalso Sz > 0.
 
 singleServer(Pool) ->
 	singleServer(Pool, 10).
