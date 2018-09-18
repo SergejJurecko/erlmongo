@@ -307,7 +307,7 @@ handle_cast({ensure_index,Pool, DB, Bin}, P) ->
 		[] ->
 			spawn(fun() ->
 				Mon = mongoapi:new(Pool,DB),
-				case Mon:insert(<<"system.indexes">>, hd(bson:decode(Bin))) of
+				case mongoapi:insert(<<"system.indexes">>, hd(bson:decode(Bin)), Mon) of
 					ok ->
 						gen_server:cast(?MODULE,{ensure_index_store, DB, Bin});
 					{error,[Ok|_]} when Ok > 0 ->
