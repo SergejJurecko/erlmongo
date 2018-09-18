@@ -439,6 +439,14 @@ handle_info(reconnect, P) ->
 	% end,
 	erlang:send_after(?RECONNECT_DELAY, self(),reconnect),
 	{noreply, reconnect(P)};
+handle_info({'DOWN', _MonitorRef, _, PID, auth_failed}, P) ->
+	case maps:get(PID,P#mngd.pids, undefined) of
+		{Pool,_} ->
+			ets:delete(Pool, PID),
+			{noreply, P#mngd{pids = maps:remove(PID,P#mngd.pids)}};
+		_ ->
+			{noreply, P}
+	end;
 handle_info({'DOWN', _MonitorRef, _, PID, Why}, P) ->
 	?DBG("conndied ~p ~p", [PID,maps:get(PID,P#mngd.pids, undefined)]),
 	% io:format("condied ~p~n", [{PID,Why}]),
@@ -767,7 +775,18 @@ connection(#con{} = P,Index,Buf) ->
 			erlang:send_after(1000,self(),{ping}),
 			connection(#con{sock = Sock, auth = init_auth(Source, Us, Pw)},1, <<>>);
 		{query_result, _Me, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Packet/binary>>} ->
-			connection(P#con{auth = scram_step(P#con.auth, Packet)},Index, Buf);
+			case (catch scram_step(P#con.auth, Packet)) of
+				{'EXIT', Err} ->
+					case code:is_loaded(logger) of
+						false ->
+							error_logger:error_msg("Authentication failed ~p", [Err]);
+						_ ->
+							logger:error("Authentication failed ~p", [Err])
+					end,
+					exit(auth_failed);
+				R ->
+					connection(P#con{auth = R},Index, Buf)
+			end;
 		{tcp_closed, _} ->
 			exit(tcp_closed)
 		after 5000 ->
