@@ -22,8 +22,19 @@ name(<<_/binary>> = Collection,{?MODULE,[_Pool,DB]}) ->
 name(Collection,PMI) when is_atom(Collection) ->
 	name(atom_to_binary(Collection, latin1),PMI).
 
-remove(Col, Selector,{?MODULE,[Pool,DB]}) ->
-	mongodb:exec_delete(Pool,name(Col,{?MODULE,[Pool,DB]}), #delete{selector = bson:encode(Selector)}).
+remove(Col, Selector, PMI) ->
+	% mongodb:exec_delete(Pool,name(Col,{?MODULE,[Pool,DB]}), #delete{selector = bson:encode(Selector)}).
+	case runCmd([{delete, Col}, {deletes, {array,[[{q, Selector},{limit,0}]]}}],PMI) of
+		[_|_] = Obj ->
+			case [lists:keyfind(Find,1,Obj) || Find <- [<<"ok">>] ] of
+				[{_,OK}] when OK > 0 ->
+					ok;
+				Invalid ->
+					{error,Invalid}
+			end;
+		E ->
+			E
+	end.
 
 
 save(Collection, L, {?MODULE,[Pool,DB]}) ->
