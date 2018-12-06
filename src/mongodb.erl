@@ -720,7 +720,6 @@ connection(#con{} = P,Index,Buf) ->
 			end,
 			connection(P,Index,Buf);
 		{find, Source, Collection, Query} ->
-			% io:format("Q ~p~n", [{get(),Index,Source}]),
 			QBin = constr_query(Query,Index, Collection),
 			ok = gen_tcp:send(P#con.sock, QBin),
 			put(Index,Source),
