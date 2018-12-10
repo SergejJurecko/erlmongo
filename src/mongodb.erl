@@ -28,6 +28,9 @@
 -define(OP_DELETE, 2006).
 -define(OP_KILL_CURSORS, 2007).
 
+-define(SSL, true).
+-define(SSL_OPTS, []).
+
 start() ->
 	gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -721,35 +724,38 @@ connection(#con{} = P,Index,Buf) ->
 			connection(P,Index,Buf);
 		{find, Source, Collection, Query} ->
 			QBin = constr_query(Query,Index, Collection),
-			ok = gen_tcp:send(P#con.sock, QBin),
+			ok = do_send(P#con.sock, QBin),
 			put(Index,Source),
 			connection(P, Index+1, Buf);
 		{insert, Collection, Doc} ->
 			Bin = constr_insert(Doc, Collection),
-			ok = gen_tcp:send(P#con.sock, Bin),
+			ok = do_send(P#con.sock, Bin),
 			connection(P, Index,Buf);
 		{update, Collection, #update{} = Doc} ->
 			Bin = constr_update(Doc, Collection),
-			ok = gen_tcp:send(P#con.sock, Bin),
+			ok = do_send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{update, Collection, [_|_] = Doc} ->
 			Bin = lists:foldl(fun(D,B) -> <<B/binary,(constr_update(D, Collection))/binary>> end, <<>>,Doc),
-			ok = gen_tcp:send(P#con.sock, Bin),
+			ok = do_send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{delete, Col, D} ->
 			Bin = constr_delete(D, Col),
-			ok = gen_tcp:send(P#con.sock, Bin),
+			ok = do_send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{getmore, Source, Col, C} ->
 			Bin = constr_getmore(C, Index, Col),
-			ok = gen_tcp:send(P#con.sock, Bin),
+			ok = do_send(P#con.sock, Bin),
 			put(Index,Source),
 			connection(P,Index+1, Buf);
 		{killcursor, C} ->
 			Bin = constr_killcursors(C),
-			ok = gen_tcp:send(P#con.sock, Bin),
+			ok = do_send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{tcp, _, Bin} ->
+			% io:format("~p~n", [{byte_size(Bin), Buf}]),
+			connection(P,Index,readpacket(<<Buf/binary,Bin/binary>>));
+		{ssl, _, Bin} ->
 			% io:format("~p~n", [{byte_size(Bin), Buf}]),
 			connection(P,Index,readpacket(<<Buf/binary,Bin/binary>>));
 		{ping} ->
@@ -760,7 +766,7 @@ connection(#con{} = P,Index,Buf) ->
 			% Collection = <<"admin.$cmd">>,
 			% Query = #search{nskip = 0, ndocs = 1, criteria = bson:encode([{<<"ping">>, 1}])},
 			% QBin = constr_query(Query,Index, Collection),
-			% ok = gen_tcp:send(P#con.sock, QBin),
+			% ok = do_send(P#con.sock, QBin),
 			% connection(P,Index+1,Buf);
 		{stop} ->
 			case con_candie() of
@@ -770,7 +776,7 @@ connection(#con{} = P,Index,Buf) ->
 					connection(P#con{die = true})
 			end;
 		{start, _Pool, Source, IP, Port, Us, Pw} ->
-			{ok, Sock} = gen_tcp:connect(IP, Port, [binary, {packet, 0}, {active, true}, {keepalive, true}], 1000),
+			{ok, Sock} = do_connect(IP, Port, 1000, ?SSL, ?SSL_OPTS),
 			erlang:send_after(1000,self(),{ping}),
 			connection(#con{sock = Sock, auth = init_auth(Source, Us, Pw)},1, <<>>);
 		{query_result, _Me, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Packet/binary>>} ->
@@ -787,7 +793,9 @@ connection(#con{} = P,Index,Buf) ->
 					connection(P#con{auth = R},Index, Buf)
 			end;
 		{tcp_closed, _} ->
-			exit(tcp_closed)
+			exit(tcp_closed);
+		{ssl_closed, _} ->
+			exit(ssl_closed)
 		after 5000 ->
 			case P#con.die of
 				true ->
@@ -803,6 +811,22 @@ connection(#con{} = P,Index,Buf) ->
 					connection(P)
 			end
 	end.
+
+% SSL/GEN_TCP connect switch
+do_connect(Host, Port, Timeout)->
+	do_connect(Host, Port, Timeout, ?SSL, ?SSL_OPTS).
+do_connect(Host, Port, Timeout, true, Opts) ->
+  {ok, _} = application:ensure_all_started(ssl),
+  ssl:connect(Host, Port, [binary, {active, true}, {packet, raw}] ++ Opts, Timeout);
+do_connect(Host, Port, Timeout, false, _) ->
+  gen_tcp:connect(Host, Port, [binary, {active, true}, {packet, raw}], Timeout).
+
+do_send(Sock, Packet) ->
+	do_send(Sock, Packet, ?SSL).
+do_send(Sock, Packet, true)->
+	ssl:send(Sock, Packet);
+do_send(Sock, Packet, false)->
+	gen_tcp:send(Sock, Packet).
 
 init_auth(Source, undefined,undefined) ->
 	self() ! {find, Source, <<"admin.$cmd">>,
