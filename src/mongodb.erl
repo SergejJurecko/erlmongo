@@ -553,13 +553,15 @@ init([]) ->
 	<<HashedHN:3/binary,_/binary>> = erlang:md5(HN),
 	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private]), hashed_hostn = HashedHN}}.
 
-set_ssl(true)->
-	set_ssl(true, []).
+set_ssl(V)->
+	set_ssl(V, []).
+set_ssl(false, Opts)->
+	application:set_env(erlmongo, ssl, false);
 set_ssl(true, Opts)->
 	application:set_env(erlmongo, ssl, true),
 	application:set_env(erlmongo, ssl_opts, Opts).
 is_ssl()->
-	application:get_env(erlmongo, ssl, false).
+	application:get_env(erlmongo, ssl, false). % defaults to false
 ssl_opts()->
 	application:get_env(erlmongo, ssl_opts, []).
 
