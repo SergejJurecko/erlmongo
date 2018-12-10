@@ -3,6 +3,7 @@
 		 handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 % API
 -export([connect/1, connect/2, is_connected/1,deleteConnection/1,
+		 set_ssl/1, set_ssl/2, is_ssl/0, ssl_opts/0,
 		 singleServer/2, singleServer/3, singleServer/1, singleServer/5,
 		 masterSlave/3, masterSlave/4, masterSlave/6,
 		 masterMaster/3, masterMaster/4, masterMaster/6,
@@ -27,9 +28,6 @@
 -define(OP_GET_MORE, 2005).
 -define(OP_DELETE, 2006).
 -define(OP_KILL_CURSORS, 2007).
-
--define(SSL, true).
--define(SSL_OPTS, []).
 
 start() ->
 	gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -555,7 +553,15 @@ init([]) ->
 	<<HashedHN:3/binary,_/binary>> = erlang:md5(HN),
 	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private]), hashed_hostn = HashedHN}}.
 
-
+set_ssl(true)->
+	set_ssl(true, []).
+set_ssl(true, Opts)->
+	application:set_env(erlmongo, ssl, true),
+	application:set_env(erlmongo, ssl_opts, Opts).
+is_ssl()->
+	application:get_env(erlmongo, ssl, false).
+ssl_opts()->
+	application:get_env(erlmongo, ssl_opts, []).
 
 gfs_proc(#gfs_state{mode = write} = P, Buf) ->
 	receive
@@ -776,7 +782,7 @@ connection(#con{} = P,Index,Buf) ->
 					connection(P#con{die = true})
 			end;
 		{start, _Pool, Source, IP, Port, Us, Pw} ->
-			{ok, Sock} = do_connect(IP, Port, 1000, ?SSL, ?SSL_OPTS),
+			{ok, Sock} = do_connect(IP, Port, 1000),
 			erlang:send_after(1000,self(),{ping}),
 			connection(#con{sock = Sock, auth = init_auth(Source, Us, Pw)},1, <<>>);
 		{query_result, _Me, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Packet/binary>>} ->
@@ -814,7 +820,7 @@ connection(#con{} = P,Index,Buf) ->
 
 % SSL/GEN_TCP connect switch
 do_connect(Host, Port, Timeout)->
-	do_connect(Host, Port, Timeout, ?SSL, ?SSL_OPTS).
+	do_connect(Host, Port, Timeout, is_ssl(), ssl_opts()).
 do_connect(Host, Port, Timeout, true, Opts) ->
   {ok, _} = application:ensure_all_started(ssl),
   ssl:connect(Host, Port, [binary, {active, true}, {packet, raw}] ++ Opts, Timeout);
@@ -822,7 +828,7 @@ do_connect(Host, Port, Timeout, false, _) ->
   gen_tcp:connect(Host, Port, [binary, {active, true}, {packet, raw}], Timeout).
 
 do_send(Sock, Packet) ->
-	do_send(Sock, Packet, ?SSL).
+	do_send(Sock, Packet, is_ssl()).
 do_send(Sock, Packet, true)->
 	ssl:send(Sock, Packet);
 do_send(Sock, Packet, false)->
