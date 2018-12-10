@@ -31,6 +31,7 @@ mongodb:sharded/2
   erl
   application:start(erlmongo).
   % Set mongodb server info. singleServer(PoolName) is the same as singleServer(PoolName,10,"localhost:27017")
+  % NOTICE: Erlang 21 disabled tuple calls. You must call with mongoapi and last parameter Mong, e.g. mongoapi:count("user", Mong).
   mongodb:singleServer(def).
   mongodb:connect(def).
   % Create an interface for test database (it has to be a binary)
@@ -103,6 +104,11 @@ mongodb:sharded/2
 = Supported Data types and modifiers
 Look at bson:encode_element/1
 
+= SSL support
+You can use application environment variables or use set_ssl to establish connections over ssl before you connect with mongodb:connect.
+  mongodb:set_ssl(true). % for ssl options use mongodb:set_ssl(true, SslOpts).
+
+
 = Switching to mochijson's style proplists
 Mochijson library has a different string/list encoding convention:
 string = binary
@@ -127,7 +133,7 @@ An example:
   ok
   15> Mong:save("foobar", [{<<"data">>, [[1.1, 2.2], [3.3, 4.4]]}]).
   {oid,<<"000af08b902dee723e000006">>}
-
+  
 
 == Supported operation list
 Collections
