@@ -1,5 +1,5 @@
 {application, erlmongo, [{description, "Erlang driver for mongodb"},
-						{vsn, "0.2"},
+						{vsn, "1.0"},
 						{modules, []},
 						{registered, [mongodb, mongodb_supervisor]},
 						{applications, [kernel, stdlib]},
