@@ -55,6 +55,8 @@ save(Collection, L, {?MODULE,[Pool,DB]}) ->
 			case insert(Collection, L1, {?MODULE,[Pool,DB]}) of
 				ok ->
 					{ok,{oid, OID}};
+				badquery ->
+					throw({error,{badquery,Collection,L}});
 				R ->
 					R
 			end;
@@ -63,6 +65,8 @@ save(Collection, L, {?MODULE,[Pool,DB]}) ->
 			case update(Collection,Sel, L, [upsert], {?MODULE,[Pool,DB]}) of
 				ok ->
 					{ok,OID};
+				badquery ->
+					throw({error,{badquery,Collection,L}});
 				R ->
 					R
 			end
@@ -94,6 +98,8 @@ update(Col, Selector, Doc, Flags,PMI) ->
 	run_update(Col, [Selector], [Doc], Flags,PMI).
 batchUpdate(Col, Selectors, Docs, Flags, PMI) ->
 	run_update(Col, Selectors, Docs, Flags,PMI).
+updateAsync(Collection, Selector, Doc, Flags,{?MODULE,[Pool,DB]}) ->
+	mongodb:exec_update(Pool,name(Collection,{?MODULE,[Pool,DB]}), #update{selector = bson:encode(Selector), document = bson:encode(Doc), upsert = updateflags(Flags,0)}).
 
 run_update(Col, Sels, Docs, Flags,PMI) ->
 	[Upsert,Multi] = [lists:member(S,Flags) || S <- [upsert,multi]],
@@ -112,6 +118,8 @@ run_update(Col, Sels, Docs, Flags,PMI) ->
 			E
 	end.
 
+batchUpdateAsync(Col, [_|_] = Selector, [_|_] = Doc, Flags,{?MODULE,[Pool,DB]}) ->
+	mongodb:exec_update(Pool,name(Col,{?MODULE,[Pool,DB]}),encbu([],Selector,Doc,updateflags(Flags,0))).
 encbu(L, [Sel|ST],[[_|_] = Doc|DT],Flags) ->
 	encbu([#update{selector = bson:encode(Sel), document = bson:encode(Doc), upsert = Flags}|L],ST,DT,Flags);
 encbu(L,[],[],_) ->
@@ -126,6 +134,9 @@ updateflags([], V) ->
 
 insert(Col, L, PMI) ->
 	run_insert(Col,[L], PMI).
+insertAsync(Col, L, {?MODULE,[Pool,DB]}) ->
+	mongodb:exec_insert(Pool,name(Col,{?MODULE,[Pool,DB]}), #insert{documents = bson:encode(L)}).
+
 
 run_insert(Col,L,PMI) ->
 	case runCmd([{insert, Col}, {documents, {array,L}}],PMI) of
@@ -143,7 +154,9 @@ run_insert(Col,L,PMI) ->
 
 batchInsert(Col, [_|_] = LRecs, PMI) ->
 	run_insert(Col, LRecs, PMI).
-
+batchInsertAsync(Col, [_|_] = LRecs,{?MODULE,[Pool,DB]}) ->
+	DocBin = lists:foldl(fun(L, Bin) -> <<Bin/binary, (bson:encode(L))/binary>> end, <<>>, LRecs),
+	mongodb:exec_insert(Pool,name(Col,{?MODULE,[Pool,DB]}), #insert{documents = DocBin}).
 
 % Advanced queries:
 %  Regex:                            Mong:find(#mydoc{name = {regex, "(.+?)\.flv", "i"}}, undefined,0,0)
@@ -325,12 +338,12 @@ count(ColIn, Query,{?MODULE,[Pool,DB]}) ->
 		[_|_] = Obj ->
 			case proplists:get_value(<<"n">>,Obj) of
 				undefined ->
-					false;
+					0;
 				Val ->
 					round(Val)
 			end;
 		_ ->
-			false
+			0
 	end.
 
 

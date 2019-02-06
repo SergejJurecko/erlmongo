@@ -196,9 +196,16 @@ exec_find(Pool,Collection, Quer) ->
 		{ok,MonRef,Pid} ->
 			receive
 				{'DOWN', _MonitorRef, _, Pid, _Why} ->
+					ets:delete(Pool,Pid),
 					timer:sleep(10),
 					exec_find(Pool, Collection, Quer);
-				{query_result, Pid, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+				{query_result, Pid, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+					case CursorID of
+						0 ->
+							ok;
+						_ ->
+							Pid ! {killcursor, #killc{cur_ids = <<CursorID:64/little>>}}
+					end,
 					erlang:demonitor(MonRef),
 					Result
 				after 200000 ->
@@ -237,8 +244,16 @@ trysend(Pool,Query,Type) when is_atom(Pool) ->
 		_ ->
 			Pos = rand:uniform(Sz)-1,
 			case (catch ets:slot(Pool,Pos)) of
-				[{Pid}] ->
+				[{Pid,false}] ->
 					trysend(Pid,Query,Type);
+				[{_Pid,true}] ->
+					case [Pid || {Pid, false} <- ets:tab2list(Pool)] of
+						[_|_] = LP ->
+							trysend(lists:nth(rand:uniform(length(LP)), LP), Query, Type);
+						[] ->
+							timer:sleep(10),
+							trysend(Pool, Query, Type)
+					end;
 				_ ->
 					case ets:first(Pool) of
 						'$end_of_table' ->
@@ -357,7 +372,7 @@ handle_cast({delete_connection, Pool}, P) ->
 		false ->
 			{noreply, P};
 		_ ->
-		[Pid ! stop || {Pid} <- ets:tab2list(Pool)],
+		[element(1,ConObj) ! stop || ConObj <- ets:tab2list(Pool)],
 		ets:delete(Pool),
 		handle_cast(save_connections, P#mngd{pools = lists:keydelete(Pool,#pool.name,P#mngd.pools)})
 	end;
@@ -370,7 +385,7 @@ handle_cast(_, P) ->
 startcon(Name, Addr, Port, Us, Pw) when is_list(Port) ->
 	startcon(Name, Addr, list_to_integer(Port), Us, Pw);
 startcon(Name, Addr, Port, Us, Pw) ->
-	{PID,_} = spawn_monitor(fun() -> connection(true) end),
+	{PID,_} = spawn_monitor(fun() -> connection_init(true) end),
 	PID ! {start, Name, self(), Addr, Port, Us, Pw},
 	PID.
 
@@ -443,7 +458,7 @@ handle_info(reconnect, P) ->
 handle_info({'DOWN', _MonitorRef, _, PID, auth_failed}, P) ->
 	case maps:get(PID,P#mngd.pids, undefined) of
 		{Pool,_} ->
-			ets:delete(Pool, PID),
+			cleanup(Pool),
 			{noreply, P#mngd{pids = maps:remove(PID,P#mngd.pids)}};
 		_ ->
 			{noreply, P}
@@ -455,13 +470,19 @@ handle_info({'DOWN', _MonitorRef, _, PID, Why}, P) ->
 		undefined ->
 			{noreply, P};
 		{Pool,?STATE_INIT} ->
+			cleanup(Pool),
 			{noreply, P#mngd{pids = maps:remove(PID,P#mngd.pids), retry = add(Pool,P#mngd.retry)}};
 		{Pool,?STATE_CLOSING} ->
-			ets:delete(Pool, PID),
+			cleanup(Pool),
 			{noreply, P#mngd{pids = maps:remove(PID,P#mngd.pids)}};
 		{Pool,?STATE_ACTIVE} ->
-			ets:delete(Pool, PID),
-			error_logger:error_msg("erlmongo connection died ~p reason=~p pool=~p~n", [PID,Why,Pool]),
+			cleanup(Pool),
+			case Why of
+				normal ->
+					ok;
+				_ ->
+					error_logger:error_msg("erlmongo connection died ~p reason=~p pool=~p~n", [PID,Why,Pool])
+			end,
 			handle_cast({start_connection, Pool, undefined}, P#mngd{pids = maps:remove(PID,P#mngd.pids)})
 	end;
 handle_info({query_result, Src, <<_:20/binary, Res/binary>>}, P) ->
@@ -475,11 +496,11 @@ handle_info({query_result, Src, <<_:20/binary, Res/binary>>}, P) ->
 							?DBG("foundmaster ~p~n", [Src]),
 							case is_connected(Pool) of
 								false ->
-									ets:insert(Pool,{Src}),
+									ets:insert(Pool,{Src, false}),
 									PI = lists:keyfind(Pool,#pool.name, P#mngd.pools),
 									conn_callback(PI#pool.cb);
 								true when PidState == ?STATE_INIT ->
-									ets:insert(Pool,{Src});
+									ets:insert(Pool,{Src, false});
 								true ->
 									ok
 							end,
@@ -522,6 +543,13 @@ handle_info(stop,_P) ->
 handle_info(_X, P) ->
 	io:format("~p~n", [_X]),
 	{noreply, P}.
+cleanup(Pool) ->
+	[case erlang:is_process_alive(element(1,Pid)) of
+		false ->
+			ets:delete(Pool,element(1,Pid));
+		true ->
+			ok
+	end || Pid <- ets:tab2list(Pool)].
 
 add(K,L) ->
 	case lists:member(K,L) of
@@ -555,7 +583,7 @@ init([]) ->
 
 set_ssl(V)->
 	set_ssl(V, []).
-set_ssl(false, Opts)->
+set_ssl(false, _Opts)->
 	application:set_env(erlmongo, ssl, false);
 set_ssl(true, Opts)->
 	application:set_env(erlmongo, ssl, true),
@@ -711,14 +739,14 @@ cursorcleanup(P) ->
 	end.
 
 
--record(con, {sock, die = false, die_attempt_cnt = 0, auth}).
+-record(con, {pool,sock, die = false, die_attempt_cnt = 0, auth}).
 -record(auth, {step = 0, us, pw, source, nonce, first_msg, sig, conv_id}).
 con_candie() ->
 	[Pid || {Ind,Pid} <- get(), is_integer(Ind) andalso is_pid(Pid)] == [].
 % Proc. d.:
 %   {ReqID, ReplyPID}
 % Waiting for request
-connection(_) ->
+connection_init(_) ->
 	connection(#con{},1,<<>>).
 connection(#con{} = P,Index,Buf) ->
 	receive
@@ -731,10 +759,17 @@ connection(#con{} = P,Index,Buf) ->
 			end,
 			connection(P,Index,Buf);
 		{find, Source, Collection, Query} ->
-			QBin = constr_query(Query,Index, Collection),
-			ok = do_send(P#con.sock, QBin),
-			put(Index,Source),
-			connection(P, Index+1, Buf);
+			ets:insert(P#con.pool,{self(),true}),
+			case catch constr_query(Query,Index, Collection) of
+				{'EXIT',_} ->
+					Source ! {query_result, self(), badquery},
+					error_logger:error_msg("Invalid query ~p ~p ~p",[Source, Collection, Query]),
+					connection(P, Index+1, Buf);
+				QBin ->
+					ok = do_send(P#con.sock, QBin),
+					put(Index,Source),
+					connection(P, Index+1, Buf)
+			end;
 		{insert, Collection, Doc} ->
 			Bin = constr_insert(Doc, Collection),
 			ok = do_send(P#con.sock, Bin),
@@ -744,7 +779,7 @@ connection(#con{} = P,Index,Buf) ->
 			ok = do_send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{update, Collection, [_|_] = Doc} ->
-			Bin = lists:foldl(fun(D,B) -> <<B/binary,(constr_update(D, Collection))/binary>> end, <<>>,Doc),
+			Bin = lists:foldl(fun(D,B) -> [B,(constr_update(D, Collection))] end, [],Doc),
 			ok = do_send(P#con.sock, Bin),
 			connection(P,Index, Buf);
 		{delete, Col, D} ->
@@ -762,10 +797,10 @@ connection(#con{} = P,Index,Buf) ->
 			connection(P,Index, Buf);
 		{tcp, _, Bin} ->
 			% io:format("~p~n", [{byte_size(Bin), Buf}]),
-			connection(P,Index,readpacket(<<Buf/binary,Bin/binary>>));
+			connection(P,Index,readpacket(P#con.pool,<<Buf/binary,Bin/binary>>));
 		{ssl, _, Bin} ->
 			% io:format("~p~n", [{byte_size(Bin), Buf}]),
-			connection(P,Index,readpacket(<<Buf/binary,Bin/binary>>));
+			connection(P,Index,readpacket(P#con.pool,<<Buf/binary,Bin/binary>>));
 		{ping} ->
 			erlang:send_after(1000,self(),{ping}),
 			self() ! {find, whereis(?MODULE), <<"admin.$cmd">>,
@@ -777,16 +812,18 @@ connection(#con{} = P,Index,Buf) ->
 			% ok = do_send(P#con.sock, QBin),
 			% connection(P,Index+1,Buf);
 		{stop} ->
+			ets:delete(P#con.pool,self()),
 			case con_candie() of
 				true ->
 					ok;
 				_ ->
-					connection(P#con{die = true})
+					connection(P#con{die = true}, Index, Buf)
 			end;
-		{start, _Pool, Source, IP, Port, Us, Pw} ->
+		{start, Pool, Source, IP, Port, Us, Pw} ->
 			{ok, Sock} = do_connect(IP, Port, 1000),
 			erlang:send_after(1000,self(),{ping}),
-			connection(#con{sock = Sock, auth = init_auth(Source, Us, Pw)},1, <<>>);
+			erlang:send_after(40000 + rand:uniform(20000),self(),{stop}),
+			connection(#con{pool = Pool, sock = Sock, auth = init_auth(Source, Us, Pw)},1, <<>>);
 		{query_result, _Me, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Packet/binary>>} ->
 			case (catch scram_step(P#con.auth, Packet)) of
 				{'EXIT', Err} ->
@@ -813,10 +850,10 @@ connection(#con{} = P,Index,Buf) ->
 						_ when P#con.die_attempt_cnt > 2 ->
 							ok;
 						_ ->
-							connection(P#con{die_attempt_cnt = P#con.die_attempt_cnt + 1})
+							connection(P#con{die_attempt_cnt = P#con.die_attempt_cnt + 1}, Index, Buf)
 					end;
 				false ->
-					connection(P)
+					connection(P, Index, Buf)
 			end
 	end.
 
@@ -843,14 +880,20 @@ init_auth(Source, undefined,undefined) ->
 init_auth(Source, Us,Pw) ->
 	scram_first_step_start(#auth{us = Us, pw = Pw, source = Source}).
 
-readpacket(<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/little, Body/binary>> = Bin) ->
+readpacket(Pool,<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/little, Body/binary>> = Bin) ->
 	BodySize = ComplSize-16,
 	case Body of
 		<<Packet:BodySize/binary,Rem/binary>> ->
 			case is_pid(get(RespID)) of
 				true ->
 					get(RespID) ! {query_result, self(), Packet},
-					erase(RespID);
+					erase(RespID),
+					case Pool of
+						undefined ->
+							ok;
+						_ ->
+							ets:insert(Pool,{self(),not con_candie()})
+					end;
 				false ->
 					true
 			end,
@@ -858,12 +901,12 @@ readpacket(<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/l
 				<<>> ->
 					<<>>;
 				_ ->
-					readpacket(Rem)
+					readpacket(Pool,Rem)
 			end;
 		_ ->
 			Bin
 	end;
-readpacket(Bin) ->
+readpacket(_Pool,Bin) ->
 	Bin.
 
 
