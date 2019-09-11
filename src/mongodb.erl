@@ -303,13 +303,13 @@ startgfs(P) ->
 
 handle_call({create_oid}, _, P) ->
 	N = P#mngd.oid_index band 16#ffffff,
-	N = erlang:monotonic_time(millisecond),
+	T = erlang:monotonic_time(millisecond),
 	R1 = rand:uniform(255),
 	R2 = rand:uniform(255),
 	R3 = rand:uniform(255),
 	R4 = rand:uniform(255),
 	R5 = rand:uniform(255),
-	Out = <<N:32, R1, R2, R3, R4, R5, N:24>>,
+	Out = <<T:32, R1, R2, R3, R4, R5, N:24>>,
 	{reply, Out, P#mngd{oid_index = P#mngd.oid_index + 1}};
 % handle_call({is_connected,Name}, _, P) ->
 % 	case get(Name) of
