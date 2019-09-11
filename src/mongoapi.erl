@@ -206,14 +206,32 @@ find(Col, #search{} = Q,{?MODULE,[Pool,DB]}) ->
 find(Col, Query, Selector, From, Limit,{?MODULE,[Pool,DB]}) ->
 	find(Col, Query, Selector, From, Limit, proplist,{?MODULE,[Pool,DB]}).
 find(Col, Query, Selector, From, Limit,Format,{?MODULE,[Pool,DB]}) ->
-	Quer = #search{ndocs = Limit, nskip = From, criteria = bson:encode(Query), field_selector = bson:encode(Selector)},
+	TStart = erlang:monotonic_time(millisecond),
+	QueryBin = bson:encode(Query),
+	QuerySize = iolist_size(QueryBin),
+	Quer = #search{ndocs = Limit, nskip = From, criteria = QueryBin, field_selector = bson:encode(Selector)},
 	case mongodb:exec_find(Pool,name(Col,{?MODULE,[Pool,DB]}), Quer) of
 		not_connected ->
 			not_connected;
 		<<>> ->
 			{ok, []};
-		Res ->
-			{ok, bson:decode(Format,Res)}
+		{ok,Tracing,Res} ->
+			BsonSize = iolist_size(Res),
+			Decoded = bson:decode(Format,Res),
+			TEnd = erlang:monotonic_time(millisecond),
+			TracingQ = Tracing#{col => Col, q => Query, q_size => QuerySize, 
+				selector => Selector, from => From, limit => Limit, 
+				bson_resp_bytes => BsonSize},
+			report(TEnd - TStart, TracingQ),
+			{ok, Decoded}
+	end.
+
+report(Time,Obj) ->
+	case application:get_env(erlmongo,tracing_mod) of
+		{ok,Mod} ->
+			apply(Mod, mongo_query_done, [Time, Obj]);
+		_ ->
+			ok
 	end.
 
 % opts: [[map | proplist],reverse, {sort, SortyBy}, explain, {hint, Hint}, snapshot]
@@ -495,7 +513,7 @@ gfsOpen(Collection, R,{?MODULE,[Pool,DB]}) ->
 					not_connected;
 				<<>> ->
 					[];
-				Result ->
+				{ok,_Tracing,Result} ->
 					[DR] = bson:decoderec(R, Result),
 					gfsOpen(Collection,DR)
 			end;
@@ -525,7 +543,7 @@ gfsDelete(Collection, R, {?MODULE,[Pool,DB]}) ->
 					not_connected;
 				<<>> ->
 					[];
-				Result ->
+				{ok,_Tracing,Result} ->
 					[DR] = bson:decoderec(R, Result),
 					gfsDelete(DR,{?MODULE,[Pool,DB]})
 			end;

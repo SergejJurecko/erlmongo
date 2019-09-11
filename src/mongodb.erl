@@ -10,7 +10,8 @@
 		 replicaPairs/3, replicaPairs/4, replicaPairs/6,
 		 datetime_to_now/1,
 		 replicaSets/2, replicaSets/3, replicaSets/5,
-		 sharded/2, sharded/3, sharded/5]).
+		 sharded/2, sharded/3, sharded/5,
+		 tracing_mod/1]).
 % Internal
 -export([exec_cursor/3, exec_delete/3, exec_cmd/3, exec_insert/3, exec_find/3, exec_update/3, exec_getmore/3,
           ensureIndex/3, clearIndexCache/0, create_id/0, startgfs/1]).
@@ -48,6 +49,9 @@ print_info() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 connect(Pool) when is_atom(Pool) ->
 	gen_server:cast(?MODULE, {start_connection, Pool, undefined}).
+% On query result calls Mod:mongo_query_done(Milliseconds,InfoObj)
+tracing_mod(Mod) ->
+	application:set_env(erlmongo, tracing_mod, Mod).
 % For when connection is established. Parameter can be:
 % - {Module,Function,Params}
 % - PID, that gets a {mongodb_connected} message
@@ -141,7 +145,7 @@ exec_cursor(Pool,Col, Quer) ->
 			receive
 				{'DOWN', _MonitorRef, _, Pid, _Why} ->
 					not_connected;
-				{query_result, _Src, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+				{query_result,_Tm,_Tm1, _Src, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
 					erlang:demonitor(MonRef),
 					% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
 					% io:format("~p~n", [Result]),
@@ -169,7 +173,7 @@ exec_getmore(Pool,Col, C) ->
 					receive
 						{'DOWN', _MonitorRef, _, Pid, _Why} ->
 							not_connected;
-						{query_result, _Src, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+						{query_result,_Tm,_Tm1, _Src, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
 							erlang:demonitor(MonRef),
 							% io:format("cursor ~p from ~p ndocs ~p, ressize ~p ~n", [_CursorID, _From, _NDocs, byte_size(Result)]),
 							% io:format("~p~n", [Result]),
@@ -192,14 +196,17 @@ exec_delete(Pool,Collection, D) ->
 	trysend(Pool,{delete,Collection,D},unsafe).
 
 exec_find(Pool,Collection, Quer) ->
+	TStart = msnow(),
 	case trysend(Pool,{find, self(), Collection, Quer}, safe) of
 		{ok,MonRef,Pid} ->
+			TSent = msnow(),
 			receive
 				{'DOWN', _MonitorRef, _, Pid, _Why} ->
 					ets:delete(Pool,Pid),
 					timer:sleep(10),
 					exec_find(Pool, Collection, Quer);
-				{query_result, Pid, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+				{query_result,RecvTime,WireTime, Pid, <<_:32,CursorID:64/little, _From:32/little, _NDocs:32/little, Result/binary>>} ->
+					TRes = msnow(),
 					case CursorID of
 						0 ->
 							ok;
@@ -207,7 +214,8 @@ exec_find(Pool,Collection, Quer) ->
 							Pid ! {killcursor, #killc{cur_ids = <<CursorID:64/little>>}}
 					end,
 					erlang:demonitor(MonRef),
-					Result
+					Times = #{send_time => TSent - TStart, resp_time => TRes - TSent, recv_time => RecvTime, con => Pid, wire_snd_delay => WireTime - TStart},
+					{ok, Times, Result}
 				after 200000 ->
 					erlang:demonitor(MonRef),
 					Pid ! {forget,self()},
@@ -221,14 +229,20 @@ exec_insert(Pool,Collection, D) ->
 exec_update(Pool,Collection, D) ->
 	trysend(Pool,{update,Collection,D}, unsafe).
 exec_cmd(Pool,DB, Cmd) ->
-	Quer = #search{ndocs = 1, nskip = 0, criteria = bson:encode(Cmd)},
+	TStart = erlang:monotonic_time(millisecond),
+	CmdBin = bson:encode(Cmd),
+	Quer = #search{ndocs = 1, nskip = 0, criteria = CmdBin},
 	case exec_find(Pool,<<DB/binary, ".$cmd">>, Quer) of
 		not_connected ->
 			not_connected;
 		<<>> ->
 			[];
-		Result ->
-			case bson:decode(Result) of
+		{ok,Tracing, Result} ->
+			Dec = bson:decode(Result),
+			TEnd = erlang:monotonic_time(millisecond),
+			Tracing1 = Tracing#{q => Cmd, q_size => iolist_size(CmdBin), bson_resp_bytes => iolist_size(Result)},
+			mongoapi:report(TEnd - TStart, Tracing1),
+			case Dec of
 				[Res] ->
 					Res;
 				Res ->
@@ -242,25 +256,12 @@ trysend(Pool,Query,Type) when is_atom(Pool) ->
 		0 ->
 			not_connected;
 		_ ->
-			Pos = rand:uniform(Sz)-1,
-			case (catch ets:slot(Pool,Pos)) of
-				[{Pid,false}] ->
-					trysend(Pid,Query,Type);
-				[{_Pid,true}] ->
-					case [Pid || {Pid, false} <- ets:tab2list(Pool)] of
-						[_|_] = LP ->
-							trysend(lists:nth(rand:uniform(length(LP)), LP), Query, Type);
-						[] ->
-							timer:sleep(10),
-							trysend(Pool, Query, Type)
-					end;
-				_ ->
-					case ets:first(Pool) of
-						'$end_of_table' ->
-							not_connected;
-						Pid when is_pid(Pid) ->
-							trysend(Pid,Query,Type)
-					end
+			case [Pid || {Pid, false} <- ets:tab2list(Pool)] of
+				[_|_] = LP ->
+					trysend(lists:nth(rand:uniform(length(LP)), LP), Query, Type);
+				[] ->
+					timer:sleep(10),
+					trysend(Pool, Query, Type)
 			end
 	end;
 trysend(Pid,Query,safe) ->
@@ -301,10 +302,14 @@ startgfs(P) ->
 -record(mngd, {indexes, pools = [], pids = #{}, retry = [], hashed_hostn, oid_index = 1}).
 
 handle_call({create_oid}, _, P) ->
-	WC = element(1,erlang:statistics(wall_clock)) rem 16#ffffffff,
-	% <<_:20/binary,PID:2/binary,_/binary>> = term_to_binary(self()),
-	N = P#mngd.oid_index rem 16#ffffff,
-	Out = <<WC:32, (P#mngd.hashed_hostn)/binary, (list_to_integer(os:getpid())):16, N:24>>,
+	N = P#mngd.oid_index band 16#ffffff,
+	N = erlang:monotonic_time(millisecond),
+	R1 = rand:uniform(255),
+	R2 = rand:uniform(255),
+	R3 = rand:uniform(255),
+	R4 = rand:uniform(255),
+	R5 = rand:uniform(255),
+	Out = <<N:32, R1, R2, R3, R4, R5, N:24>>,
 	{reply, Out, P#mngd{oid_index = P#mngd.oid_index + 1}};
 % handle_call({is_connected,Name}, _, P) ->
 % 	case get(Name) of
@@ -485,7 +490,7 @@ handle_info({'DOWN', _MonitorRef, _, PID, Why}, P) ->
 			end,
 			handle_cast({start_connection, Pool, undefined}, P#mngd{pids = maps:remove(PID,P#mngd.pids)})
 	end;
-handle_info({query_result, Src, <<_:20/binary, Res/binary>>}, P) ->
+handle_info({query_result,_Tm,_Tm1, Src, <<_:20/binary, Res/binary>>}, P) ->
 	case maps:get(Src, P#mngd.pids, undefined) of
 		{Pool,PidState} ->
 			% io:format("got ismaster query_result ~p~n", [Pool]),
@@ -533,7 +538,7 @@ handle_info({query_result, Src, <<_:20/binary, Res/binary>>}, P) ->
 			Src ! {stop},
 			{noreply, P}
 	end;
-handle_info({query_result, Src, _}, P) ->
+handle_info({query_result,_Tm,_Tm1, Src, _}, P) ->
 	Src ! {stop},
 	{Pool,?STATE_INIT} = maps:get(Src, P#mngd.pids),
 	error_logger:error_msg("erlmongo ismaster invalid response pool=~p", [Pool]),
@@ -579,7 +584,7 @@ init([]) ->
 	end,
 	{ok, HN} = inet:gethostname(),
 	<<HashedHN:3/binary,_/binary>> = erlang:md5(HN),
-	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private]), hashed_hostn = HashedHN}}.
+	{ok, #mngd{indexes = ets:new(mongoIndexes, [set, private]), hashed_hostn = HashedHN, oid_index = rand:uniform(16#ffffff)}}.
 
 set_ssl(V)->
 	set_ssl(V, []).
@@ -738,6 +743,8 @@ cursorcleanup(P) ->
 			cursorcleanup(#ccd{conn = P,cursor = Cursor})
 	end.
 
+msnow() ->
+	erlang:monotonic_time(millisecond).
 
 -record(con, {pool,sock, die = false, die_attempt_cnt = 0, auth}).
 -record(auth, {step = 0, us, pw, source, nonce, first_msg, sig, conv_id}).
@@ -755,19 +762,26 @@ connection(#con{} = P,Index,Buf) ->
 				false ->
 					ok;
 				Id ->
+					erase({Id,time}),
 					erase(Id)
 			end,
 			connection(P,Index,Buf);
 		{find, Source, Collection, Query} ->
-			ets:insert(P#con.pool,{self(),true}),
+			case P#con.die of
+				true ->
+					ok;
+				_ ->
+					ets:insert(P#con.pool,{self(),true})
+			end,
 			case catch constr_query(Query,Index, Collection) of
 				{'EXIT',_} ->
-					Source ! {query_result, self(), badquery},
+					Source ! {query_result, 0,0, self(), badquery},
 					error_logger:error_msg("Invalid query ~p ~p ~p",[Source, Collection, Query]),
 					connection(P, Index+1, Buf);
 				QBin ->
 					ok = do_send(P#con.sock, QBin),
 					put(Index,Source),
+					put({Index,time}, msnow()),
 					connection(P, Index+1, Buf)
 			end;
 		{insert, Collection, Doc} ->
@@ -797,14 +811,19 @@ connection(#con{} = P,Index,Buf) ->
 			connection(P,Index, Buf);
 		{tcp, _, Bin} ->
 			% io:format("~p~n", [{byte_size(Bin), Buf}]),
-			connection(P,Index,readpacket(P#con.pool,<<Buf/binary,Bin/binary>>));
+			connection(P,Index,readpacket(P#con.pool,P#con.die,<<Buf/binary,Bin/binary>>));
 		{ssl, _, Bin} ->
 			% io:format("~p~n", [{byte_size(Bin), Buf}]),
-			connection(P,Index,readpacket(P#con.pool,<<Buf/binary,Bin/binary>>));
+			connection(P,Index,readpacket(P#con.pool,P#con.die,<<Buf/binary,Bin/binary>>));
 		{ping} ->
-			erlang:send_after(1000,self(),{ping}),
-			self() ! {find, whereis(?MODULE), <<"admin.$cmd">>,
-				#search{nskip = 0, ndocs = 1, criteria = bson:encode([{<<"ismaster">>, 1}])}},
+			case P#con.die of
+				true ->
+					ok;
+				_ ->
+					erlang:send_after(1000,self(),{ping}),
+					self() ! {find, whereis(?MODULE), <<"admin.$cmd">>,
+						#search{nskip = 0, ndocs = 1, criteria = bson:encode([{<<"ismaster">>, 1}])}}
+			end,
 			connection(P, Index, Buf);
 			% Collection = <<"admin.$cmd">>,
 			% Query = #search{nskip = 0, ndocs = 1, criteria = bson:encode([{<<"ping">>, 1}])},
@@ -824,7 +843,7 @@ connection(#con{} = P,Index,Buf) ->
 			erlang:send_after(1000,self(),{ping}),
 			erlang:send_after(40000 + rand:uniform(20000),self(),{stop}),
 			connection(#con{pool = Pool, sock = Sock, auth = init_auth(Source, Us, Pw)},1, <<>>);
-		{query_result, _Me, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Packet/binary>>} ->
+		{query_result,_Tm,_Tm1, _Me, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Packet/binary>>} ->
 			case (catch scram_step(P#con.auth, Packet)) of
 				{'EXIT', Err} ->
 					case code:is_loaded(logger) of
@@ -841,7 +860,7 @@ connection(#con{} = P,Index,Buf) ->
 			exit(tcp_closed);
 		{ssl_closed, _} ->
 			exit(ssl_closed)
-		after 5000 ->
+		after 2000 ->
 			case P#con.die of
 				true ->
 					case con_candie() of
@@ -862,9 +881,9 @@ do_connect(Host, Port, Timeout)->
 	do_connect(Host, Port, Timeout, is_ssl(), ssl_opts()).
 do_connect(Host, Port, Timeout, true, Opts) ->
   {ok, _} = application:ensure_all_started(ssl),
-  ssl:connect(Host, Port, [binary, {active, true}, {packet, raw}] ++ Opts, Timeout);
+  ssl:connect(Host, Port, [binary, {active, true}, {packet, raw}, {nodelay,true}] ++ Opts, Timeout);
 do_connect(Host, Port, Timeout, false, _) ->
-  gen_tcp:connect(Host, Port, [binary, {active, true}, {packet, raw}], Timeout).
+  gen_tcp:connect(Host, Port, [binary, {active, true}, {packet, raw}, {nodelay,true}], Timeout).
 
 do_send(Sock, Packet) ->
 	do_send(Sock, Packet, is_ssl()).
@@ -880,16 +899,28 @@ init_auth(Source, undefined,undefined) ->
 init_auth(Source, Us,Pw) ->
 	scram_first_step_start(#auth{us = Us, pw = Pw, source = Source}).
 
-readpacket(Pool,<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/little, Body/binary>> = Bin) ->
+readpacket(Pool,Die,<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode:32/little, Body/binary>> = Bin) ->
 	BodySize = ComplSize-16,
 	case Body of
 		<<Packet:BodySize/binary,Rem/binary>> ->
+			Time = erlang:monotonic_time(millisecond),
+			case get(building) of
+				undefined ->
+					Start = Time;
+				Start ->
+					ok
+			end,
+			erase(building),
 			case is_pid(get(RespID)) of
 				true ->
-					get(RespID) ! {query_result, self(), Packet},
+					WireSendTime = get({RespID,time}),
+					get(RespID) ! {query_result, Time - Start, WireSendTime, self(), Packet},
 					erase(RespID),
+					erase({RespID,time}),
 					case Pool of
 						undefined ->
+							ok;
+						_ when Die ->
 							ok;
 						_ ->
 							ets:insert(Pool,{self(),not con_candie()})
@@ -901,12 +932,18 @@ readpacket(Pool,<<ComplSize:32/little, _ReqID:32/little,RespID:32/little,_OpCode
 				<<>> ->
 					<<>>;
 				_ ->
-					readpacket(Pool,Rem)
+					readpacket(Pool,Die,Rem)
 			end;
 		_ ->
+			case get(building) of
+				undefined ->
+					put(building,erlang:monotonic_time(millisecond));
+				_ ->
+					ok
+			end,
 			Bin
 	end;
-readpacket(_Pool,Bin) ->
+readpacket(_Pool,_Die,Bin) ->
 	Bin.
 
 
