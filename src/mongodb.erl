@@ -4,6 +4,7 @@
 % API
 -export([connect/1, connect/2, is_connected/1,deleteConnection/1,
 		 set_ssl/1, set_ssl/2, is_ssl/0, ssl_opts/0,
+	         set_timeout/1, timeout_delay/0,
 		 singleServer/2, singleServer/3, singleServer/1, singleServer/5,
 		 masterSlave/3, masterSlave/4, masterSlave/6,
 		 masterMaster/3, masterMaster/4, masterMaster/6,
@@ -19,7 +20,8 @@
 % -compile(export_all).
 
 -define(MONGO_PORT, 27017).
--define(RECONNECT_DELAY, 1000).
+-define(TIMEOUT_DEFAULT, 1000).
+-define(RECONNECT_DELAY, timeout_delay()).
 
 -define(OP_REPLY, 1).
 -define(OP_MSG, 1000).
@@ -598,6 +600,11 @@ is_ssl()->
 ssl_opts()->
 	application:get_env(erlmongo, ssl_opts, []).
 
+set_timeout(V) when is_integer(V)->
+        application:set_env(erlmongo, timeout, ?TIMEOUT_DEFAULT).
+timeout_delay()->
+	application:get_env(erlmongo, timeout, ?TIMEOUT_DEFAULT).
+
 gfs_proc(#gfs_state{mode = write} = P, Buf) ->
 	receive
 		{write, Bin} ->
@@ -839,8 +846,8 @@ connection(#con{} = P,Index,Buf) ->
 					connection(P#con{die = true}, Index, Buf)
 			end;
 		{start, Pool, Source, IP, Port, Us, Pw} ->
-			{ok, Sock} = do_connect(IP, Port, 1000),
-			erlang:send_after(1000,self(),{ping}),
+			{ok, Sock} = do_connect(IP, Port, timeout_delay()),
+			erlang:send_after(timeout_delay(),self(),{ping}),
 			erlang:send_after(40000 + rand:uniform(20000),self(),{stop}),
 			connection(#con{pool = Pool, sock = Sock, auth = init_auth(Source, Us, Pw)},1, <<>>);
 		{query_result,_Tm,_Tm1, _Me, <<_:32,_CursorID:64/little, _From:32/little, _NDocs:32/little, Packet/binary>>} ->
