@@ -601,7 +601,7 @@ ssl_opts()->
 	application:get_env(erlmongo, ssl_opts, []).
 
 set_timeout(V) when is_integer(V)->
-        application:set_env(erlmongo, timeout, ?TIMEOUT_DEFAULT).
+        application:set_env(erlmongo, timeout, V).
 timeout_delay()->
 	application:get_env(erlmongo, timeout, ?TIMEOUT_DEFAULT).
 
