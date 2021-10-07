@@ -1075,16 +1075,16 @@ pw_hash(Username, Password) ->
 
 %% @private
 generate_proof(SaltedPassword, AuthMessage) ->
-  ClientKey = crypto:hmac(sha, SaltedPassword, <<"Client Key">>),
+  ClientKey = crypto:mac(hmac, sha, SaltedPassword, <<"Client Key">>),
   StoredKey = crypto:hash(sha, ClientKey),
-  Signature = crypto:hmac(sha, StoredKey, AuthMessage),
+  Signature = crypto:mac(hmac, sha, StoredKey, AuthMessage),
   ClientProof = xorKeys(ClientKey, Signature, <<>>),
   <<"p=", (base64:encode(ClientProof))/binary>>.
 
 %% @private
 generate_sig(SaltedPassword, AuthMessage) ->
-  ServerKey = crypto:hmac(sha, SaltedPassword, "Server Key"),
-  crypto:hmac(sha, ServerKey, AuthMessage).
+  ServerKey = crypto:mac(hmac, sha, SaltedPassword, "Server Key"),
+  crypto:mac(hmac, sha, ServerKey, AuthMessage).
 
 %% @private
 xorKeys(<<>>, _, Res) -> Res;
@@ -1114,8 +1114,8 @@ end.
 pbkdf2(_Password, _Salt, Iterations, _BlockIndex, Iteration, _Prev, Acc) when Iteration > Iterations ->
 	Acc;
 pbkdf2(Password, Salt, Iterations, BlockIndex, 1, _Prev, _Acc) ->
-	InitialBlock = crypto:hmac(sha,Password, <<Salt/binary, BlockIndex:32/integer>>),
+	InitialBlock = crypto:mac(hmac, sha,Password, <<Salt/binary, BlockIndex:32/integer>>),
 	pbkdf2(Password, Salt, Iterations, BlockIndex, 2, InitialBlock, InitialBlock);
 pbkdf2(Password, Salt, Iterations, BlockIndex, Iteration, Prev, Acc) ->
-	Next = crypto:hmac(sha,Password, Prev),
+	Next = crypto:mac(hmac, sha,Password, Prev),
 	pbkdf2(Password, Salt, Iterations, BlockIndex, Iteration + 1, Next, crypto:exor(Next, Acc)).
